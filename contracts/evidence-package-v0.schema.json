@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/evidence-package-v0.schema.json",
+  "title": "Tannang Synthetic Evidence Package v0",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "manifest_version",
+    "product_version",
+    "runtime_artifact",
+    "runtime_lane",
+    "target_fingerprint",
+    "requested_capability",
+    "selected_provider",
+    "provider_class",
+    "compatibility",
+    "execution",
+    "reason",
+    "acquisition_semantics",
+    "raw_or_derived",
+    "started_at",
+    "finished_at",
+    "side_effect_summary",
+    "directory_layout"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "manifest_version": { "const": "1.0" },
+    "product_version": { "type": "string" },
+    "runtime_artifact": { "type": "string" },
+    "runtime_lane": { "type": "string" },
+    "target_fingerprint": { "type": "object" },
+    "requested_capability": { "type": "object" },
+    "selected_provider": { "type": ["object", "null"] },
+    "provider_class": { "type": "string" },
+    "compatibility": { "enum": ["AVAILABLE", "DEGRADED", "UNAVAILABLE"] },
+    "execution": { "type": "object" },
+    "reason": { "type": "string" },
+    "acquisition_semantics": { "type": "string" },
+    "raw_or_derived": { "enum": ["RAW", "DERIVED"] },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "side_effect_summary": { "type": "string", "minLength": 1 },
+    "directory_layout": {
+      "type": "array",
+      "items": { "enum": ["meta", "raw", "derived", "normalized", "receipts", "hashes", "handoff", "reports"] }
+    }
+  }
+}

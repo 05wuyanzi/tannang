@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/target-fingerprint-v0.schema.json",
+  "title": "Tannang Target Fingerprint v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "platform",
+    "os_family",
+    "version",
+    "build",
+    "architecture",
+    "privilege",
+    "elevated",
+    "runtime_lane"
+  ],
+  "properties": {
+    "platform": { "type": "string", "minLength": 1 },
+    "os_family": { "type": "string", "minLength": 1 },
+    "version": { "type": "string", "minLength": 1 },
+    "build": { "type": "string", "minLength": 1 },
+    "architecture": { "type": "string", "minLength": 1 },
+    "privilege": { "type": "string", "minLength": 1 },
+    "elevated": { "type": "boolean" },
+    "runtime_lane": { "type": "string", "minLength": 1 }
+  }
+}

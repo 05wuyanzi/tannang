@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/handoff-v0.schema.json",
+  "title": "Tannang Handoff Status v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "prepared", "executed", "reason"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "prepared": { "const": false },
+    "executed": { "const": false },
+    "reason": { "type": "string", "minLength": 1 }
+  }
+}

@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "name": "provider-failure",
+  "capability": {
+    "id": "SYNTHETIC_HOST_SUMMARY",
+    "description": "Represent a deterministic provider execution failure.",
+    "acquisition_semantics": "DERIVED_DIAGNOSTIC_REPORT",
+    "sensitivity": "low"
+  },
+  "target_fingerprint": {
+    "platform": "windows",
+    "os_family": "WindowsNT",
+    "version": "synthetic-modern",
+    "build": "0",
+    "architecture": "amd64",
+    "privilege": "standard-user",
+    "elevated": false,
+    "runtime_lane": "MODERN"
+  },
+  "providers": [
+    {
+      "id": "synthetic-failing",
+      "class": "SYNTHETIC_TEST",
+      "capabilities": ["SYNTHETIC_HOST_SUMMARY"],
+      "requirements": {
+        "platforms": ["windows"],
+        "os_families": ["WindowsNT"],
+        "architectures": ["amd64"],
+        "runtime_lanes": ["MODERN"],
+        "requires_elevation": false,
+        "available": true,
+        "availability_reason": "NONE"
+      },
+      "side_effects": ["none"],
+      "quality": {
+        "compatibility": "AVAILABLE",
+        "reason": "NONE",
+        "fidelity": 5,
+        "disturbance": 0,
+        "completeness": 5,
+        "output_stability": 5,
+        "evidence_value": 3
+      }
+    }
+  ],
+  "behavior": {
+    "provider_id": "synthetic-failing",
+    "execution_state": "FAILED",
+    "reason": "PROVIDER_ERROR",
+    "detail": "Synthetic provider returned the configured failure.",
+    "raw_or_derived": "DERIVED",
+    "side_effect_summary": "None; embedded synthetic failure only."
+  }
+}

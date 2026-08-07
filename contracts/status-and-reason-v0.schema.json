@@ -1,0 +1,25 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/status-and-reason-v0.schema.json",
+  "title": "Tannang Status and Reason v0",
+  "type": "object",
+  "required": ["compatibility", "execution", "reason"],
+  "properties": {
+    "compatibility": { "enum": ["AVAILABLE", "DEGRADED", "UNAVAILABLE"] },
+    "execution": { "enum": ["COLLECTED", "PARTIAL", "SKIPPED", "FAILED", "BLOCKED"] },
+    "reason": {
+      "enum": [
+        "NONE",
+        "PRIVILEGE_REQUIRED",
+        "API_UNAVAILABLE",
+        "DEPENDENCY_MISSING",
+        "TARGET_STATE_RESTRICTED",
+        "TIMEOUT",
+        "PROVIDER_ERROR",
+        "POLICY_DISABLED",
+        "UNSUPPORTED_OS",
+        "UNSUPPORTED_ARCH"
+      ]
+    }
+  }
+}

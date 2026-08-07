@@ -1,0 +1,21 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/capability-v0.schema.json",
+  "title": "Tannang Capability v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["id", "description", "acquisition_semantics", "sensitivity"],
+  "properties": {
+    "id": { "type": "string", "pattern": "^[A-Z0-9_]+$" },
+    "description": { "type": "string", "minLength": 1 },
+    "acquisition_semantics": {
+      "enum": [
+        "EXISTING_ARTIFACT_EXPORT",
+        "STATE_SNAPSHOT",
+        "DERIVED_DIAGNOSTIC_REPORT",
+        "ACTIVE_TRACE"
+      ]
+    },
+    "sensitivity": { "type": "string", "minLength": 1 }
+  }
+}

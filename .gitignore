@@ -1,0 +1,7 @@
+/bin/
+/dist/
+/coverage/
+*.exe
+*.test
+*.out
+*.tmp

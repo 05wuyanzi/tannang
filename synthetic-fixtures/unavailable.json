@@ -1,0 +1,54 @@
+{
+  "schema_version": "1.0",
+  "name": "unavailable",
+  "capability": {
+    "id": "SYNTHETIC_HOST_SUMMARY",
+    "description": "Represent a deterministic capability with no usable provider.",
+    "acquisition_semantics": "STATE_SNAPSHOT",
+    "sensitivity": "low"
+  },
+  "target_fingerprint": {
+    "platform": "windows",
+    "os_family": "WindowsNT",
+    "version": "synthetic-heritage",
+    "build": "0",
+    "architecture": "x86",
+    "privilege": "standard-user",
+    "elevated": false,
+    "runtime_lane": "HERITAGE"
+  },
+  "providers": [
+    {
+      "id": "synthetic-missing",
+      "class": "SYNTHETIC_TEST",
+      "capabilities": ["SYNTHETIC_HOST_SUMMARY"],
+      "requirements": {
+        "platforms": ["windows"],
+        "os_families": ["WindowsNT"],
+        "architectures": ["x86"],
+        "runtime_lanes": ["HERITAGE"],
+        "requires_elevation": false,
+        "available": false,
+        "availability_reason": "DEPENDENCY_MISSING"
+      },
+      "side_effects": ["none"],
+      "quality": {
+        "compatibility": "UNAVAILABLE",
+        "reason": "DEPENDENCY_MISSING",
+        "fidelity": 0,
+        "disturbance": 0,
+        "completeness": 0,
+        "output_stability": 0,
+        "evidence_value": 0
+      }
+    }
+  ],
+  "behavior": {
+    "provider_id": "synthetic-missing",
+    "execution_state": "SKIPPED",
+    "reason": "DEPENDENCY_MISSING",
+    "detail": "No synthetic provider is available for this target.",
+    "raw_or_derived": "DERIVED",
+    "side_effect_summary": "None; provider execution was not attempted."
+  }
+}

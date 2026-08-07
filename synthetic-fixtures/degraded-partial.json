@@ -1,0 +1,59 @@
+{
+  "schema_version": "1.0",
+  "name": "degraded-partial",
+  "capability": {
+    "id": "SYNTHETIC_HOST_SUMMARY",
+    "description": "Produce a deterministic synthetic host summary with explicit degradation.",
+    "acquisition_semantics": "STATE_SNAPSHOT",
+    "sensitivity": "low"
+  },
+  "target_fingerprint": {
+    "platform": "windows",
+    "os_family": "WindowsNT",
+    "version": "synthetic-legacy",
+    "build": "0",
+    "architecture": "amd64",
+    "privilege": "standard-user",
+    "elevated": false,
+    "runtime_lane": "LEGACY"
+  },
+  "providers": [
+    {
+      "id": "synthetic-degraded",
+      "class": "SYNTHETIC_TEST",
+      "capabilities": ["SYNTHETIC_HOST_SUMMARY"],
+      "requirements": {
+        "platforms": ["windows"],
+        "os_families": ["WindowsNT"],
+        "architectures": ["amd64"],
+        "runtime_lanes": ["LEGACY"],
+        "requires_elevation": false,
+        "available": true,
+        "availability_reason": "NONE"
+      },
+      "side_effects": ["none"],
+      "quality": {
+        "compatibility": "DEGRADED",
+        "reason": "API_UNAVAILABLE",
+        "fidelity": 3,
+        "disturbance": 0,
+        "completeness": 2,
+        "output_stability": 5,
+        "evidence_value": 2
+      }
+    }
+  ],
+  "behavior": {
+    "provider_id": "synthetic-degraded",
+    "execution_state": "PARTIAL",
+    "reason": "API_UNAVAILABLE",
+    "detail": "One synthetic field is intentionally unavailable.",
+    "raw_or_derived": "DERIVED",
+    "side_effect_summary": "None; embedded synthetic data only.",
+    "payload": {
+      "fixture_value": "degraded-partial",
+      "records": 1,
+      "limitations": ["synthetic_optional_field_unavailable"]
+    }
+  }
+}

@@ -1,0 +1,38 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/integrity-manifest-v0.schema.json",
+  "title": "Tannang SHA-256 Manifest v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "algorithm", "self_excluded", "directories", "entries"],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "algorithm": { "const": "SHA-256" },
+    "self_excluded": { "const": "hashes/manifest.json" },
+    "directories": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "hashed_file_count"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "hashed_file_count": { "type": "integer", "minimum": 0 }
+        }
+      }
+    },
+    "entries": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["path", "size", "sha256"],
+        "properties": {
+          "path": { "type": "string", "minLength": 1 },
+          "size": { "type": "integer", "minimum": 0 },
+          "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+        }
+      }
+    }
+  }
+}
