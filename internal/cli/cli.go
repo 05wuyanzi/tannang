@@ -15,6 +15,7 @@ import (
 	"github.com/05wuyanzi/tannang/internal/application"
 	"github.com/05wuyanzi/tannang/internal/execution"
 	"github.com/05wuyanzi/tannang/internal/integrity"
+	"github.com/05wuyanzi/tannang/internal/pathsafe"
 )
 
 const (
@@ -25,6 +26,7 @@ const (
 	ExitBlocked       = 12
 	ExitProviderError = 13
 	ExitIntegrity     = 20
+	ExitPathSafety    = 21
 )
 
 // Run executes one CLI request and returns its process exit code.
@@ -52,17 +54,20 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	flags := flag.NewFlagSet("collect", flag.ContinueOnError)
 	flags.SetOutput(stderr)
 	fixture := flags.String("synthetic", "", "embedded synthetic fixture name")
-	output := flags.String("output", "", "new evidence package directory")
+	output := flags.String("output", "", "new absolute local evidence package directory")
 	if err := flags.Parse(args); err != nil {
 		return ExitUsage
 	}
 	if flags.NArg() != 0 || *fixture == "" || *output == "" {
-		fmt.Fprintln(stderr, "collect requires --synthetic <fixture> and --output <new-directory>")
+		fmt.Fprintln(stderr, "collect requires --synthetic <fixture> and --output <new-absolute-local-directory>")
 		return ExitUsage
 	}
 	outcome, err := application.Collect(ctx, *fixture, *output)
 	if err != nil {
 		fmt.Fprintf(stderr, "collect failed: %v\n", err)
+		if pathsafe.IsSafetyError(err) {
+			return ExitPathSafety
+		}
 		return ExitProviderError
 	}
 	writeJSON(stdout, struct {
@@ -92,6 +97,9 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 	}
 	if err := integrity.Verify(args[0]); err != nil {
 		fmt.Fprintf(stderr, "verification failed: %v\n", err)
+		if pathsafe.IsSafetyError(err) {
+			return ExitPathSafety
+		}
 		return ExitIntegrity
 	}
 	writeJSON(stdout, struct {
@@ -103,8 +111,8 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 
 func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "Tannang pre-alpha synthetic CLI")
-	fmt.Fprintln(writer, "  tannang collect --synthetic <fixture> --output <new-directory>")
-	fmt.Fprintln(writer, "  tannang verify <package-directory>")
+	fmt.Fprintln(writer, "  tannang collect --synthetic <fixture> --output <new-absolute-local-directory>")
+	fmt.Fprintln(writer, "  tannang verify <absolute-local-package-directory>")
 }
 
 func writeJSON(writer io.Writer, value any) {

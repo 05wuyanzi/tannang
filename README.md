@@ -38,7 +38,8 @@ The pre-alpha synthetic core currently provides:
 - separate compatibility and execution states;
 - execution receipt generation;
 - a fixed Evidence Package layout;
-- a SHA-256 integrity manifest and package verifier; and
+- a SHA-256 integrity manifest and package verifier;
+- a Windows path and reparse-point safety baseline for package I/O; and
 - synthetic end-to-end coverage for successful, partial, unavailable,
   blocked, and provider-failure outcomes.
 
@@ -85,15 +86,17 @@ security boundaries.
 
 With Go 1.21 or later, run from the repository root:
 
-```console
+```powershell
 go run ./cmd/tannang --help
-go run ./cmd/tannang collect --synthetic available-collected --output ./tannang-demo-package
-go run ./cmd/tannang verify ./tannang-demo-package
+$package = Join-Path (Get-Location) "tannang-demo-package"
+go run ./cmd/tannang collect --synthetic available-collected --output $package
+go run ./cmd/tannang verify $package
 ```
 
-The output path must not already exist. Collection reads the named embedded
-fixture, creates a synthetic Evidence Package, and refuses to overwrite an
-existing package.
+The output path must be a canonical absolute path on allowed local fixed or
+removable storage, its parent must exist, and the output itself must not exist.
+Collection reads the named embedded fixture, creates a synthetic Evidence
+Package, and refuses unsafe paths or overwrite.
 
 ## Evidence package
 
@@ -110,10 +113,11 @@ handoff/
 reports/
 ```
 
-Package creation uses a temporary sibling directory and publishes the final
-path only after integrity verification succeeds. The manifest records sorted
-paths, sizes, and SHA-256 values. Verification rejects missing, modified,
-extra, linked, duplicated, non-canonical, or undeclared package content.
+Package creation uses a guarded temporary sibling, protects every child write,
+and publishes the final path by same-parent rename only after integrity
+verification succeeds. The manifest records sorted paths, sizes, and SHA-256
+values. Verification rejects missing, modified, extra, linked, duplicated,
+non-canonical, undeclared, or reparse-directed package content.
 
 See [Evidence package v0](docs/architecture/evidence-package.md) for details.
 
@@ -124,18 +128,21 @@ See [Evidence package v0](docs/architecture/evidence-package.md) for details.
 - Receipts record the request, target fingerprint, provider decision, outcome,
   reason, timestamps, and side-effect summary.
 - The integrity manifest makes package contents independently verifiable.
+- Windows package I/O rejects reparse points, UNC and mapped remote paths,
+  special device namespaces, ambiguous paths, and existing output roots.
 - `ACTIVE_TRACE` is policy-disabled and is not currently implemented.
 - No third-party binary is bundled or downloaded automatically.
 - Optional external backends remain user-supplied, separate-process
   integrations and are not executed by the current synthetic core.
 
-See [Genesis security boundaries](docs/architecture/security-boundaries.md).
+See [Genesis security boundaries](docs/architecture/security-boundaries.md)
+and [Windows path safety v0](docs/architecture/windows-path-safety.md).
 
 ## Current limitations
 
 ```yaml
 supported_windows_matrix: not_yet_established
-real_windows_provider: not_yet_enabled
+real_windows_provider: false
 real_collection: false
 active_trace: false
 production_ready: false
@@ -155,10 +162,10 @@ imply support for any additional platform.
 ## Roadmap
 
 The next Windows-focused engineering work is expected to establish the
-supported target matrix, complete and benign-test path containment and
-reparse-point behavior, and then introduce narrowly scoped real providers only
-after their safety boundaries are verified. None of that work is implemented
-or supported by the current pre-alpha release.
+supported target matrix and evaluate stronger handle-relative hardening before
+introducing narrowly scoped real providers. The current path baseline does not
+claim resistance to privileged concurrent namespace races, and no real
+Provider is implemented or supported by this pre-alpha release.
 
 ## Third-party boundary
 

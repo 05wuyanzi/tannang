@@ -35,6 +35,7 @@ Pre-alpha synthetic core 当前包括：
 - Execution Receipt 生成；
 - 固定的 Evidence Package 目录结构；
 - SHA-256 完整性 manifest 与证据包 verifier；
+- 用于证据包 I/O 的 Windows 路径与 reparse-point 安全基线；
 - 覆盖成功、部分完成、不可用、被阻止和 Provider 失败的 synthetic E2E。
 
 Compatibility 状态为 `AVAILABLE`、`DEGRADED`、`UNAVAILABLE`；Execution
@@ -78,14 +79,16 @@ Provider 合同定义了 `WINDOWS_INBOX`、`FIRST_PARTY_NATIVE` 和
 
 使用 Go 1.21 或更高版本，在仓库根目录运行：
 
-```console
+```powershell
 go run ./cmd/tannang --help
-go run ./cmd/tannang collect --synthetic available-collected --output ./tannang-demo-package
-go run ./cmd/tannang verify ./tannang-demo-package
+$package = Join-Path (Get-Location) "tannang-demo-package"
+go run ./cmd/tannang collect --synthetic available-collected --output $package
+go run ./cmd/tannang verify $package
 ```
 
-输出路径必须尚不存在。采集命令只读取指定的内嵌 fixture，创建 synthetic
-Evidence Package，并拒绝覆盖已有证据包。
+输出路径必须是允许的本地固定或可移动存储上的规范绝对路径，父目录必须存在，且
+输出路径本身必须尚不存在。采集命令只读取指定的内嵌 fixture，创建 synthetic
+Evidence Package，并拒绝不安全路径或覆盖已有证据包。
 
 ## 证据包
 
@@ -102,9 +105,10 @@ handoff/
 reports/
 ```
 
-创建过程先写入同级临时目录，仅在完整性验证成功后才发布最终路径。Manifest
-记录排序后的路径、大小与 SHA-256 值。Verifier 会拒绝缺失、被修改、多余、链接、
-重复、非规范或未声明的包内容。
+创建过程使用受保护的同级临时目录，保护每一次 child write，并仅在完整性验证成功后
+通过同父目录 rename 发布最终路径。Manifest 记录排序后的路径、大小与 SHA-256
+值。Verifier 会拒绝缺失、被修改、多余、链接、重复、非规范、未声明或经 reparse
+重定向的包内容。
 
 详见 [Evidence package v0](docs/architecture/evidence-package.md)。
 
@@ -115,18 +119,21 @@ reports/
 - Receipt 记录请求、Target Fingerprint、Provider 决策、执行结果、原因、时间戳和
   Side Effect 摘要；
 - 完整性 manifest 使证据包内容可以独立验证；
+- Windows 证据包 I/O 会拒绝 reparse point、UNC 与映射远程路径、特殊设备
+  namespace、歧义路径和已存在的输出 root；
 - `ACTIVE_TRACE` 被策略禁用，当前也未实现；
 - 不捆绑第三方二进制，也不会自动下载第三方二进制；
 - 可选 External Backend 保持由用户提供、独立进程集成，当前 synthetic core 不会
   执行它们。
 
-详见 [Genesis security boundaries](docs/architecture/security-boundaries.md)。
+详见 [Genesis security boundaries](docs/architecture/security-boundaries.md) 与
+[Windows path safety v0](docs/architecture/windows-path-safety.md)。
 
 ## 当前限制
 
 ```yaml
 supported_windows_matrix: not_yet_established
-real_windows_provider: not_yet_enabled
+real_windows_provider: false
 real_collection: false
 active_trace: false
 production_ready: false
@@ -143,9 +150,10 @@ Legacy/Heritage Windows runtime。Synthetic fixture 中的 `LEGACY` 与 `HERITAG
 
 ## 路线图
 
-下一阶段的 Windows 工程工作预计先确定受支持的目标矩阵，完成路径 containment
-和 reparse-point 行为并进行良性测试；只有在安全边界得到验证后，才会引入范围
-明确的真实 Provider。当前 Pre-alpha 版本尚未实现或支持这些工作。
+下一阶段的 Windows 工程工作预计先确定受支持的目标矩阵并评估更强的
+handle-relative hardening，之后才会引入范围明确的真实 Provider。当前路径基线不
+声称抵抗高权限进程并发替换 filesystem namespace；本 Pre-alpha 版本尚未实现或
+支持任何真实 Provider。
 
 ## 第三方边界
 
