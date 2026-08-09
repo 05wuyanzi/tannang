@@ -40,6 +40,27 @@ process, PowerShell, WMI, service, registry/security change, or UAC action.
 Non-Windows probing returns `UNSUPPORTED` and fails closed. This build behavior
 is not a Linux or macOS support claim.
 
+The library-only FirstStage contract adds coordination, not collection. This
+slice commits no production baseline; its tests use synthetic Capability IDs
+only. No planned process, network, session, service, Event Log, or other
+Stage-1 evidence group is implemented. It invokes configured Providers
+sequentially within each Run, records every accepted request, and has no worker
+pool, plugin framework, hidden fallback, or background collection. A
+FirstStage instance rejects an overlapping Run instead of queuing it; separate
+instances are independent and no process-global scheduler is introduced.
+
+FirstStage requires explicit startup, output-path, Fingerprint, Resolver, and
+Finalizer seams. No default startup seam claims a trusted release state. Caller
+cancellation stops new Provider launches. When prerequisites have succeeded,
+cleanup/finalization uses a separate context bounded by trusted positive
+timeout; it cannot continue without that bound.
+
+The Finalizer boundary carries opaque references only. Existing synthetic
+Payload is not authority for future real Provider artifact transport, and the
+current implementation adds no artifact reader, stream, workspace, writer, or
+materialization contract. There is no production multi-capability package
+adapter and no CLI wiring to FirstStage.
+
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It
 does not claim full resistance to a privileged process concurrently replacing

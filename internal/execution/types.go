@@ -4,7 +4,11 @@
 
 package execution
 
-import "encoding/json"
+import (
+	"encoding/json"
+	"errors"
+	"strings"
+)
 
 // CompatibilityState describes whether a provider can satisfy a request.
 type CompatibilityState string
@@ -44,10 +48,36 @@ const (
 
 // Result is returned by a provider. Compatibility is intentionally absent.
 type Result struct {
-	State   State           `json:"state"`
-	Reason  Reason          `json:"reason"`
-	Detail  string          `json:"detail,omitempty"`
-	Payload json.RawMessage `json:"payload,omitempty"`
+	State             State           `json:"state"`
+	Reason            Reason          `json:"reason"`
+	Detail            string          `json:"detail,omitempty"`
+	SideEffectSummary string          `json:"side_effect_summary"`
+	Payload           json.RawMessage `json:"payload,omitempty"`
+}
+
+// Validate checks the existing execution contract and the synthetic Payload
+// boundary. Payload is retained only for synthetic compatibility; it is not a
+// general artifact transport contract.
+func (r Result) Validate() error {
+	if !r.State.Valid() {
+		return errors.New("execution result state is invalid")
+	}
+	if !r.Reason.Valid() {
+		return errors.New("execution result reason is invalid")
+	}
+	if strings.TrimSpace(r.SideEffectSummary) == "" {
+		return errors.New("execution result side effect summary is required")
+	}
+	if len(r.Payload) == 0 {
+		return nil
+	}
+	if r.State != Collected && r.State != Partial {
+		return errors.New("synthetic payload requires COLLECTED or PARTIAL execution")
+	}
+	if !json.Valid(r.Payload) {
+		return errors.New("synthetic payload must contain valid JSON")
+	}
+	return nil
 }
 
 // Valid reports whether a compatibility state is defined by v0.

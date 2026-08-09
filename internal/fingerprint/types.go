@@ -120,6 +120,46 @@ type TargetFingerprint struct {
 	Probe        *ProbeFields `json:"probe,omitempty"`
 }
 
+// Clone returns a deep copy suitable for mutable resolver, provider, and
+// finalizer boundaries. The retained run snapshot therefore cannot be changed
+// through Field values or optional probe pointers shared with a consumer.
+func (f TargetFingerprint) Clone() TargetFingerprint {
+	clone := f
+	if f.Probe == nil {
+		return clone
+	}
+	probe := *f.Probe
+	probe.OSVersion = cloneField(f.Probe.OSVersion)
+	probe.OSBuild = cloneField(f.Probe.OSBuild)
+	probe.NativeArchitecture = cloneField(f.Probe.NativeArchitecture)
+	probe.ProcessArchitecture = cloneField(f.Probe.ProcessArchitecture)
+	probe.LogicalProcessorCount = cloneField(f.Probe.LogicalProcessorCount)
+	probe.TotalPhysicalMemoryBytes = cloneField(f.Probe.TotalPhysicalMemoryBytes)
+	probe.AvailablePhysicalMemoryBytes = cloneField(f.Probe.AvailablePhysicalMemoryBytes)
+	probe.Elevated = cloneField(f.Probe.Elevated)
+	probe.TokenElevationType = cloneField(f.Probe.TokenElevationType)
+	probe.OutputVolume.ValidatedOutputPath = cloneField(f.Probe.OutputVolume.ValidatedOutputPath)
+	probe.OutputVolume.VolumeRoot = cloneField(f.Probe.OutputVolume.VolumeRoot)
+	probe.OutputVolume.DriveType = cloneField(f.Probe.OutputVolume.DriveType)
+	probe.OutputVolume.FileSystem = cloneField(f.Probe.OutputVolume.FileSystem)
+	probe.OutputVolume.AvailableBytesCaller = cloneField(f.Probe.OutputVolume.AvailableBytesCaller)
+	if f.Probe.CPUBusyBasisPoints != nil {
+		cpu := cloneField(*f.Probe.CPUBusyBasisPoints)
+		probe.CPUBusyBasisPoints = &cpu
+	}
+	clone.Probe = &probe
+	return clone
+}
+
+func cloneField[T any](field Field[T]) Field[T] {
+	clone := field
+	if field.Value != nil {
+		value := *field.Value
+		clone.Value = &value
+	}
+	return clone
+}
+
 // MarshalJSON keeps trusted synthetic fixtures byte-contract compatible while
 // omitting unresolved compatibility mirrors from partial real probe results.
 // Field-level probe state remains the authority until Validate succeeds.

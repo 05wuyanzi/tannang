@@ -54,6 +54,9 @@ func TestSyntheticEndToEndScenarios(t *testing.T) {
 			if metadata.Execution.State != test.state || metadata.Compatibility != test.compatibility {
 				t.Fatalf("metadata did not preserve status separation: %+v", metadata)
 			}
+			if strings.TrimSpace(metadata.Execution.SideEffectSummary) == "" || metadata.SideEffectSummary != metadata.Execution.SideEffectSummary {
+				t.Fatalf("metadata did not preserve the execution side-effect summary: %+v", metadata)
+			}
 			if test.hasArtifact {
 				if metadata.ArtifactPath == "" {
 					t.Fatal("expected artifact path")

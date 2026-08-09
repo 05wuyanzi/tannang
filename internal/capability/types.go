@@ -20,12 +20,31 @@ const (
 	ActiveTrace             AcquisitionSemantics = "ACTIVE_TRACE"
 )
 
+// RequestPriority provides a small deterministic ordering hint without
+// encoding provider or resolver policy.
+type RequestPriority string
+
+const (
+	PriorityEarly  RequestPriority = "EARLY"
+	PriorityNormal RequestPriority = "NORMAL"
+	PriorityLate   RequestPriority = "LATE"
+)
+
 // Capability describes requested evidence without binding it to a provider.
 type Capability struct {
 	ID                   string               `json:"id"`
 	Description          string               `json:"description"`
 	AcquisitionSemantics AcquisitionSemantics `json:"acquisition_semantics"`
 	Sensitivity          string               `json:"sensitivity"`
+}
+
+// CapabilityRequest identifies requested evidence independently of a
+// provider. Protected membership is trusted configuration interpreted by the
+// application orchestration layer.
+type CapabilityRequest struct {
+	ID        string          `json:"id"`
+	Priority  RequestPriority `json:"priority"`
+	Protected bool            `json:"protected"`
 }
 
 // Valid reports whether the acquisition semantic is part of the v0 contract.
@@ -38,9 +57,46 @@ func (s AcquisitionSemantics) Valid() bool {
 	}
 }
 
+// Valid reports whether the request priority is part of the v0 orchestration
+// contract.
+func (p RequestPriority) Valid() bool {
+	switch p {
+	case PriorityEarly, PriorityNormal, PriorityLate:
+		return true
+	default:
+		return false
+	}
+}
+
+// Order returns the stable sort order for a valid request priority.
+func (p RequestPriority) Order() int {
+	switch p {
+	case PriorityEarly:
+		return 0
+	case PriorityNormal:
+		return 1
+	case PriorityLate:
+		return 2
+	default:
+		return 3
+	}
+}
+
+// Validate rejects malformed request identity and priority. It deliberately
+// leaves protected-baseline ownership to the application layer.
+func (r CapabilityRequest) Validate() error {
+	if !ValidID(r.ID) {
+		return errors.New("capability request id must contain only uppercase letters, digits, and underscores")
+	}
+	if !r.Priority.Valid() {
+		return fmt.Errorf("unsupported capability request priority %q", r.Priority)
+	}
+	return nil
+}
+
 // Validate rejects malformed capability definitions.
 func (c Capability) Validate() error {
-	if !validID(c.ID) {
+	if !ValidID(c.ID) {
 		return errors.New("capability id must contain only uppercase letters, digits, and underscores")
 	}
 	if strings.TrimSpace(c.Description) == "" {
@@ -55,7 +111,10 @@ func (c Capability) Validate() error {
 	return nil
 }
 
-func validID(value string) bool {
+// ValidID reports whether value follows the committed Capability ID syntax.
+// Application request handling reuses this authority rather than duplicating
+// the syntax.
+func ValidID(value string) bool {
 	if value == "" {
 		return false
 	}

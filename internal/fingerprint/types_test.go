@@ -200,6 +200,32 @@ func TestPartialRealFingerprintJSONOmitsUnknownCompatibilityMirrors(t *testing.T
 	}
 }
 
+func TestTargetFingerprintCloneDeepCopiesProbeValues(t *testing.T) {
+	t.Parallel()
+	original := validRealTarget(t)
+	cpu := knownField(uint32(2500), "GetSystemTimes", testTime())
+	original.Probe.CPUBusyBasisPoints = &cpu
+
+	clone := original.Clone()
+	*clone.Probe.OSVersion.Value = "mutated"
+	*clone.Probe.OutputVolume.AvailableBytesCaller.Value = 0
+	*clone.Probe.CPUBusyBasisPoints.Value = 9999
+	clone.Probe.CPUBusyBasisPoints.ErrorReason = "mutated"
+
+	if got := *original.Probe.OSVersion.Value; got != "10.0" {
+		t.Fatalf("clone changed original OS version to %q", got)
+	}
+	if got := *original.Probe.OutputVolume.AvailableBytesCaller.Value; got != uint64(1<<30) {
+		t.Fatalf("clone changed original available bytes to %d", got)
+	}
+	if got := *original.Probe.CPUBusyBasisPoints.Value; got != 2500 {
+		t.Fatalf("clone changed original CPU value to %d", got)
+	}
+	if original.Probe.CPUBusyBasisPoints.ErrorReason != "" {
+		t.Fatal("clone changed original optional field metadata")
+	}
+}
+
 func validRealTarget(t *testing.T) TargetFingerprint {
 	t.Helper()
 	now := testTime()

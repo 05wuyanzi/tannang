@@ -23,6 +23,15 @@ Package, is not a real Provider, performs no network collection, and does not
 make this pre-alpha repository production ready. The repository slug and CLI
 are `tannang`; the Go module is `github.com/05wuyanzi/tannang`.
 
+The repository also defines a library-only FirstStage orchestration contract.
+It merges a trusted protected baseline with additive synthetic requests,
+acquires one immutable Target Fingerprint, resolves and executes selected
+synthetic Providers sequentially within each Run, accounts for every request,
+and coordinates a bounded reference-only Finalizer seam. One FirstStage
+instance rejects overlapping Runs rather than queuing them; separate instances
+are independent. It is not wired into the CLI and does not add a real Stage-1
+Capability or evidence collection.
+
 ## Why Tannang exists
 
 Live-response acquisition needs more than an artifact. Reviewers should be
@@ -38,6 +47,8 @@ The pre-alpha synthetic core currently provides:
 - a CLI for synthetic collection and package verification;
 - Capability and Target Fingerprint models;
 - a Provider abstraction and compatibility Resolver;
+- a synthetic, library-only FirstStage orchestration contract with explicit
+  per-request accounting;
 - an embedded Synthetic Provider with end-to-end fixtures;
 - separate compatibility and execution states;
 - execution receipt generation;
@@ -49,7 +60,9 @@ The pre-alpha synthetic core currently provides:
 
 Compatibility uses `AVAILABLE`, `DEGRADED`, and `UNAVAILABLE`. Execution uses
 `COLLECTED`, `PARTIAL`, `SKIPPED`, `FAILED`, and `BLOCKED`. A partial or blocked
-attempt is never presented as complete collection.
+attempt is never presented as complete collection. Application orchestration
+reasons and run `COMPLETE`/`PARTIAL`/`FAILED` states remain separate from those
+Resolver and Provider domains.
 
 ## Architecture overview
 
@@ -129,6 +142,9 @@ See [Evidence package v0](docs/architecture/evidence-package.md) for details.
 
 - Acquisition intent is represented explicitly by a Capability.
 - Resolver decisions and execution results remain separate and auditable.
+- FirstStage runs Providers sequentially within a Run, rejects an overlapping
+  Run on the same instance, never silently removes protected requests, and
+  records missing evidence explicitly.
 - Receipts record the request, target fingerprint, provider decision, outcome,
   reason, timestamps, and side-effect summary.
 - The integrity manifest makes package contents independently verifiable.
@@ -162,6 +178,11 @@ support declarations.
 Tannang currently targets Windows. Its evidence and orchestration contracts
 are intentionally separated from provider implementations; this does not
 imply support for any additional platform.
+
+The current synthetic `execution.Result.Payload` is fixture compatibility, not
+a transport contract for future real Provider artifacts. Real Provider artifact
+transport is intentionally undefined until the first real Capability Gate.
+There is no production multi-capability package adapter in this release.
 
 ## Roadmap
 

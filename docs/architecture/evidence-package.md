@@ -39,3 +39,18 @@ rechecks each regular file before opening and hashing it. See
 
 Handoff status is non-executing. The genesis package does not grant downstream
 execution authority and does not invoke another capability.
+
+## FirstStage finalization seam
+
+The library-only FirstStage contract does not redesign this package or call a
+new production package builder. Its application-owned Finalizer seam describes
+only the outcome FirstStage must validate: verification status, an opaque
+package reference, exactly one receipt reference per accepted request, and an
+optional artifact reference per request.
+
+Synthetic orchestration tests use fake Finalizers and require no filesystem
+materialization. The seam does not define artifact bytes, paths, readers,
+streams, workspaces, writers, package layout, or hashing. `evidence.Create`
+remains the single-capability synthetic implementation above. A production
+multi-capability adapter and real Provider artifact transport are intentionally
+deferred to later reviewed Gates.

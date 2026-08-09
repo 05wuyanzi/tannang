@@ -46,9 +46,10 @@ func Collect(ctx context.Context, fixtureName, output string) (Outcome, error) {
 	}
 
 	result := execution.Result{
-		State:  execution.Skipped,
-		Reason: decision.Reason,
-		Detail: "No compatible synthetic provider was selected.",
+		State:             execution.Skipped,
+		Reason:            decision.Reason,
+		Detail:            "No compatible synthetic provider was selected.",
+		SideEffectSummary: "No provider was executed.",
 	}
 	var selected *receipt.ProviderIdentity
 	var providerClass provider.Class
@@ -62,6 +63,9 @@ func Collect(ctx context.Context, fixtureName, output string) (Outcome, error) {
 		payload = result.Payload
 		selected = &receipt.ProviderIdentity{ID: decision.Selected.ID, Class: decision.Selected.Class}
 		providerClass = decision.Selected.Class
+	}
+	if err := result.Validate(); err != nil {
+		return Outcome{}, fmt.Errorf("validate synthetic execution result: %w", err)
 	}
 	finished := time.Now().UTC()
 	artifactPath := ""
@@ -92,7 +96,7 @@ func Collect(ctx context.Context, fixtureName, output string) (Outcome, error) {
 		ArtifactPath:         artifactPath,
 		StartedAt:            started.Format(time.RFC3339Nano),
 		FinishedAt:           finished.Format(time.RFC3339Nano),
-		SideEffectSummary:    fixture.Behavior.SideEffectSummary,
+		SideEffectSummary:    result.SideEffectSummary,
 		CandidateEvaluations: decision.Evaluations,
 	}
 	if err := evidence.Create(output, record, payload); err != nil {

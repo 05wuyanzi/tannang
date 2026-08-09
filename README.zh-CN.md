@@ -20,6 +20,13 @@ Fingerprint probe；它读取少量本机兼容性、资源、权限与输出卷
 pre-alpha 仓库已具备生产就绪性。仓库 slug 和 CLI 均为 `tannang`，Go module 为
 `github.com/05wuyanzi/tannang`。
 
+仓库还定义了一个仅供库调用的 FirstStage 编排合同：它把可信的受保护 baseline 与
+附加 synthetic 请求合并，为每个 run 获取一次不可变 Target Fingerprint，在单个 Run
+内按顺序解析并执行选定的 synthetic Provider，完整记账所有请求，并协调一个有界、
+仅返回引用和结果的 Finalizer seam。同一 FirstStage 实例会拒绝而不是排队等待重叠
+Run；不同实例彼此独立。该合同未接入 CLI，也没有增加任何真实 Stage-1 Capability 或
+证据采集。
+
 ## 为什么需要探囊
 
 现场响应采集不应只留下一个文件。复核者还需要确认请求了什么、为何选择某个
@@ -33,6 +40,7 @@ Pre-alpha synthetic core 当前包括：
 - 用于 synthetic 采集和证据包验证的 CLI；
 - Capability 与 Target Fingerprint 模型；
 - Provider 抽象与兼容性 Resolver；
+- 仅限 synthetic、库级的 FirstStage 编排合同及明确的逐请求记账；
 - 使用内嵌数据的 Synthetic Provider 和端到端 fixture；
 - 相互独立的 compatibility 与 execution 状态；
 - Execution Receipt 生成；
@@ -43,7 +51,8 @@ Pre-alpha synthetic core 当前包括：
 
 Compatibility 状态为 `AVAILABLE`、`DEGRADED`、`UNAVAILABLE`；Execution
 状态为 `COLLECTED`、`PARTIAL`、`SKIPPED`、`FAILED`、`BLOCKED`。部分完成或
-被阻止的尝试不会被表述为完整采集。
+被阻止的尝试不会被表述为完整采集。Application 编排原因以及 run 级
+`COMPLETE`/`PARTIAL`/`FAILED` 状态与 Resolver、Provider 状态域保持分离。
 
 ## 架构概览
 
@@ -119,6 +128,8 @@ reports/
 
 - 采集意图由 Capability 明确表达；
 - Resolver 决策和 Execution Result 相互独立并可审计；
+- FirstStage 在单个 Run 内按顺序执行 Provider，拒绝同一实例上的重叠 Run，不会静默
+  移除受保护请求，并明确记录缺失证据；
 - Receipt 记录请求、Target Fingerprint、Provider 决策、执行结果、原因、时间戳和
   Side Effect 摘要；
 - 完整性 manifest 使证据包内容可以独立验证；
@@ -150,6 +161,10 @@ Legacy/Heritage Windows runtime。Synthetic fixture 中的 `LEGACY` 与 `HERITAG
 
 探囊当前以 Windows 为目标。证据与编排合同有意和 Provider 实现分离，但这并不
 代表当前支持其他平台。
+
+当前 synthetic `execution.Result.Payload` 只是 fixture 兼容机制，并不是未来真实
+Provider 的制品传输合同。真实 Provider 制品传输有意推迟到第一个真实 Capability
+Gate 再定义；当前版本也没有生产级多 Capability 证据包适配器。
 
 ## 路线图
 
