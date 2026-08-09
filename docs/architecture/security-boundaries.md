@@ -13,10 +13,32 @@ The pre-alpha synthetic build is not approved for production or real evidence.
 - Verification rejects any reparse point in the package root, ancestor chain,
   or package tree before reading or hashing package content.
 - Active Trace is policy-disabled.
-- No host identity, process, network, event log, user, registry, or filesystem
-  evidence is read.
+- The explicitly invoked Target Fingerprint probe may read only bounded local
+  compatibility and resource facts: Windows version/build, architecture, CPU
+  count, physical memory, current-token elevation, and resource facts for an
+  already PATHSAFE-accepted output location.
+- The fingerprint is not evidence acquisition. It does not read process,
+  network, event log, user/session, registry-evidence, service, credential, or
+  filesystem-evidence content and it creates no Evidence Package artifact.
 - No external process, third-party backend, or network client is used.
 - No third-party source, binary, or Go module is included.
+
+The fingerprint records raw values and field-level probe status only. It does
+not classify a target as healthy, constrained, supported, or suitable; it does
+not select a Provider or assign a runtime lane. `RtlGetVersion` supplies actual
+OS compatibility context without using manifest-sensitive `GetVersion` or
+`GetVersionEx`, but a build number is not generic API-availability proof.
+
+Output-volume probing does not implement another path policy. The caller path
+is checked through the existing PATHSAFE contract before and after the local
+volume metadata calls. The probe creates no directory or file, never switches
+volumes, and does not weaken the existing `PREEXISTING_REDIRECTION_SAFETY`
+claim. Optional CPU pressure is one bounded 250 ms sample rather than ongoing
+monitoring. The base probe requires no elevation, network access, child
+process, PowerShell, WMI, service, registry/security change, or UAC action.
+
+Non-Windows probing returns `UNSUPPORTED` and fails closed. This build behavior
+is not a Linux or macOS support claim.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It

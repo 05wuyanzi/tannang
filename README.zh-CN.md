@@ -13,8 +13,11 @@
 探囊是一个 Windows-first 工程项目，用于描述采集意图、评估 Provider
 兼容性、记录执行结果，并将证据与可审计的完整性元数据一起封装。
 
-当前仓库只实现了 synthetic 控制路径。它仅使用内嵌 fixture，不检查也不采集
-本机 Windows 数据。仓库 slug 和 CLI 均为 `tannang`，Go module 为
+默认 CLI 和 Application 路径仍仅限 synthetic：它们只使用内嵌 fixture，不执行
+真实事件响应证据采集。仓库同时包含一个必须显式调用、范围受限的 Windows Target
+Fingerprint probe；它读取少量本机兼容性、资源、权限与输出卷事实，但不是证据采集，
+不会创建 Evidence Package，不是真实 Provider，不进行网络采集，也不代表这个
+pre-alpha 仓库已具备生产就绪性。仓库 slug 和 CLI 均为 `tannang`，Go module 为
 `github.com/05wuyanzi/tannang`。
 
 ## 为什么需要探囊

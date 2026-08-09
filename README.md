@@ -14,10 +14,14 @@ Tannang is a Windows-first project for describing acquisition intent,
 evaluating provider compatibility, recording execution outcomes, and packaging
 evidence with auditable integrity metadata.
 
-The current repository implements a synthetic control path only. It uses
-embedded fixtures and does not inspect or collect data from the local Windows
-host. The repository slug and CLI are `tannang`; the Go module is
-`github.com/05wuyanzi/tannang`.
+The default CLI and Application path remain synthetic-only: they use embedded
+fixtures and do not perform real incident-response evidence collection. The
+repository also contains an explicitly invoked, bounded Windows Target
+Fingerprint probe. It reads limited local compatibility, resource, privilege,
+and output-volume facts; it is not evidence acquisition, creates no Evidence
+Package, is not a real Provider, performs no network collection, and does not
+make this pre-alpha repository production ready. The repository slug and CLI
+are `tannang`; the Go module is `github.com/05wuyanzi/tannang`.
 
 ## Why Tannang exists
 
