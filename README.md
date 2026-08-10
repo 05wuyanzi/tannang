@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**Status:** Pre-alpha · Synthetic core only · Not production ready
+**Status:** Pre-alpha · Synthetic CLI/Application · Not production ready
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -22,6 +22,17 @@ and output-volume facts; it is not evidence acquisition, creates no Evidence
 Package, is not a real Provider, performs no network collection, and does not
 make this pre-alpha repository production ready. The repository slug and CLI
 are `tannang`; the Go module is `github.com/05wuyanzi/tannang`.
+
+The repository now also contains an explicit library-level implementation
+candidate for one narrow first-party native Windows Provider:
+`PROCESS_IDENTITY_SNAPSHOT`. It uses the Tool Help process snapshot API and
+emits only process ID, parent process ID, and executable name as NDJSON to a
+caller-owned writer. It is not wired into the CLI or FirstStage, is not in the
+protected baseline, has no production Evidence Package adapter, and has not
+passed the separate benign real-Windows acceptance Gate. Default tests do not
+enumerate host processes. Target compatibility is limited to `amd64` and
+`x86`; Go build validation uses `windows/amd64` and compile-only `windows/386`,
+which is not a native x86 real-host acceptance claim.
 
 The repository also defines a library-only FirstStage orchestration contract.
 It merges a trusted protected baseline with additive synthetic requests,
@@ -47,6 +58,8 @@ The pre-alpha synthetic core currently provides:
 - a CLI for synthetic collection and package verification;
 - Capability and Target Fingerprint models;
 - a Provider abstraction and compatibility Resolver;
+- an explicit, library-only `PROCESS_IDENTITY_SNAPSHOT` Provider candidate
+  with a synchronous caller-owned writer boundary;
 - a synthetic, library-only FirstStage orchestration contract with explicit
   per-request accounting;
 - an embedded Synthetic Provider with end-to-end fixtures;
@@ -63,6 +76,9 @@ Compatibility uses `AVAILABLE`, `DEGRADED`, and `UNAVAILABLE`. Execution uses
 attempt is never presented as complete collection. Application orchestration
 reasons and run `COMPLETE`/`PARTIAL`/`FAILED` states remain separate from those
 Resolver and Provider domains.
+Execution reason `CANCELLED` means an attempted Provider was explicitly
+cancelled; application `OrchestrationReason=CANCELLED` continues to describe
+orchestration-owned cancellation, including selected work that was not run.
 
 ## Architecture overview
 
@@ -89,9 +105,9 @@ Evidence Package
 ```
 
 The provider contract defines `WINDOWS_INBOX`, `FIRST_PARTY_NATIVE`, and
-`EXTERNAL_BACKEND`. No real provider for those classes is implemented yet.
-`SYNTHETIC_TEST` is the only current provider implementation and is restricted
-to testing with embedded data.
+`EXTERNAL_BACKEND`. A bounded `FIRST_PARTY_NATIVE` process-snapshot Provider
+candidate exists only as an explicitly invoked library API. `SYNTHETIC_TEST`
+remains the only Provider class reachable from the current CLI and FirstStage.
 
 See [`contracts/`](contracts/) for machine-readable contracts and
 [`docs/architecture/`](docs/architecture/) for the detailed architecture and
@@ -170,8 +186,11 @@ forensic_certification: none
 judicial_validation: none
 ```
 
-There is no real Windows acquisition, external backend integration, packet
-capture, or supported Legacy/Heritage Windows runtime in this release.
+There is no real Windows acquisition through the current CLI, FirstStage, or
+protected baseline, and there is no external backend integration, packet
+capture, or supported Legacy/Heritage Windows runtime in this release. The
+explicit process-snapshot Provider candidate is not an activation or production
+support claim.
 `LEGACY` and `HERITAGE` values in synthetic fixtures are test inputs, not
 support declarations.
 
@@ -180,17 +199,20 @@ are intentionally separated from provider implementations; this does not
 imply support for any additional platform.
 
 The current synthetic `execution.Result.Payload` is fixture compatibility, not
-a transport contract for future real Provider artifacts. Real Provider artifact
-transport is intentionally undefined until the first real Capability Gate.
-There is no production multi-capability package adapter in this release.
+a transport contract for real Provider artifacts. The process-snapshot
+candidate instead defines only a synchronous caller-owned `io.Writer` handoff
+for serialized observations; the caller owns path choice, close/flush,
+retain/discard, hashing, and publication. There is no production
+multi-capability package adapter in this release, and writer output is not by
+itself an Evidence Package or published artifact reference.
 
 ## Roadmap
 
-The next Windows-focused engineering work is expected to establish the
-supported target matrix and evaluate stronger handle-relative hardening before
-introducing narrowly scoped real providers. The current path baseline does not
-claim resistance to privileged concurrent namespace races, and no real
-Provider is implemented or supported by this pre-alpha release.
+The next Windows-focused engineering Gates are independent review of the narrow
+Provider candidate, opt-in benign Windows acceptance, and only then a separate
+decision about FirstStage/protected-baseline activation. The current path
+baseline does not claim resistance to privileged concurrent namespace races,
+and this pre-alpha repository remains non-production.
 
 ## Third-party boundary
 

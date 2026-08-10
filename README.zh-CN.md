@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**状态：** Pre-alpha · 仅有 Synthetic Core · Not production ready
+**状态：** Pre-alpha · CLI/Application 仅限 Synthetic · Not production ready
 
 **简体中文** | [English](README.md)
 
@@ -19,6 +19,15 @@ Fingerprint probe；它读取少量本机兼容性、资源、权限与输出卷
 不会创建 Evidence Package，不是真实 Provider，不进行网络采集，也不代表这个
 pre-alpha 仓库已具备生产就绪性。仓库 slug 和 CLI 均为 `tannang`，Go module 为
 `github.com/05wuyanzi/tannang`。
+
+仓库现在还包含一个必须显式调用、仅供库使用的窄范围 first-party native Windows
+Provider 实施候选：`PROCESS_IDENTITY_SNAPSHOT`。它使用 Tool Help 进程快照 API，
+只把进程 ID、父进程 ID 与可执行文件名以 NDJSON 写入调用方拥有的 writer。它未接入
+CLI 或 FirstStage，不属于 protected baseline，没有生产 Evidence Package 适配器，且
+尚未通过独立的 benign real-Windows acceptance Gate。默认测试不会枚举主机进程。
+Target compatibility 仅限 `amd64` 与 `x86`；Go build 验证使用
+`windows/amd64` 和仅编译的 `windows/386`，后者不代表已完成 native x86 真实主机
+验收。
 
 仓库还定义了一个仅供库调用的 FirstStage 编排合同：它把可信的受保护 baseline 与
 附加 synthetic 请求合并，为每个 run 获取一次不可变 Target Fingerprint，在单个 Run
@@ -40,6 +49,8 @@ Pre-alpha synthetic core 当前包括：
 - 用于 synthetic 采集和证据包验证的 CLI；
 - Capability 与 Target Fingerprint 模型；
 - Provider 抽象与兼容性 Resolver；
+- 显式、仅供库使用的 `PROCESS_IDENTITY_SNAPSHOT` Provider 实施候选及同步的
+  caller-owned writer 边界；
 - 仅限 synthetic、库级的 FirstStage 编排合同及明确的逐请求记账；
 - 使用内嵌数据的 Synthetic Provider 和端到端 fixture；
 - 相互独立的 compatibility 与 execution 状态；
@@ -53,6 +64,9 @@ Compatibility 状态为 `AVAILABLE`、`DEGRADED`、`UNAVAILABLE`；Execution
 状态为 `COLLECTED`、`PARTIAL`、`SKIPPED`、`FAILED`、`BLOCKED`。部分完成或
 被阻止的尝试不会被表述为完整采集。Application 编排原因以及 run 级
 `COMPLETE`/`PARTIAL`/`FAILED` 状态与 Resolver、Provider 状态域保持分离。
+Execution reason `CANCELLED` 表示已经尝试执行的 Provider 被显式取消；application
+`OrchestrationReason=CANCELLED` 仍表示编排层拥有的取消，包括已选择但尚未执行的
+工作。
 
 ## 架构概览
 
@@ -79,8 +93,9 @@ Evidence Package
 ```
 
 Provider 合同定义了 `WINDOWS_INBOX`、`FIRST_PARTY_NATIVE` 和
-`EXTERNAL_BACKEND`，但目前尚未实现这些类型的真实 Provider。当前唯一实现的是
-`SYNTHETIC_TEST`，且仅限使用内嵌数据进行测试。
+`EXTERNAL_BACKEND`。一个有界的 `FIRST_PARTY_NATIVE` 进程快照 Provider 候选仅以
+显式库 API 形式存在；当前 CLI 与 FirstStage 可达的 Provider 类型仍只有
+`SYNTHETIC_TEST`。
 
 机器可读合同见 [`contracts/`](contracts/)，详细架构和安全边界见
 [`docs/architecture/`](docs/architecture/)。
@@ -155,23 +170,26 @@ forensic_certification: none
 judicial_validation: none
 ```
 
-当前版本不包含真实 Windows 采集、External Backend 集成、Packet Capture，也不支持
-Legacy/Heritage Windows runtime。Synthetic fixture 中的 `LEGACY` 与 `HERITAGE`
-只是测试输入，不代表支持声明。
+当前 CLI、FirstStage 与 protected baseline 不包含真实 Windows 采集；当前版本也不
+包含 External Backend 集成、Packet Capture，且不支持 Legacy/Heritage Windows
+runtime。显式进程快照 Provider 实施候选不代表已经激活或获得生产支持。
+Synthetic fixture 中的 `LEGACY` 与 `HERITAGE` 只是测试输入，不代表支持声明。
 
 探囊当前以 Windows 为目标。证据与编排合同有意和 Provider 实现分离，但这并不
 代表当前支持其他平台。
 
 当前 synthetic `execution.Result.Payload` 只是 fixture 兼容机制，并不是未来真实
-Provider 的制品传输合同。真实 Provider 制品传输有意推迟到第一个真实 Capability
-Gate 再定义；当前版本也没有生产级多 Capability 证据包适配器。
+Provider 的制品传输合同。进程快照候选仅定义同步的 caller-owned `io.Writer` 交接来
+传递 serialized observations；path 选择、close/flush、retain/discard、Hash 与发布
+均由调用方负责。当前版本没有生产级多 Capability 证据包适配器，writer 输出本身也
+不等于 Evidence Package 或已发布的 artifact reference。
 
 ## 路线图
 
-下一阶段的 Windows 工程工作预计先确定受支持的目标矩阵并评估更强的
-handle-relative hardening，之后才会引入范围明确的真实 Provider。当前路径基线不
-声称抵抗高权限进程并发替换 filesystem namespace；本 Pre-alpha 版本尚未实现或
-支持任何真实 Provider。
+后续 Windows 工程 Gate 依次是窄范围 Provider 实施的独立复核、显式选择加入的
+benign Windows acceptance，以及之后单独决定是否接入 FirstStage/protected
+baseline。当前路径基线不声称抵抗高权限进程并发替换 filesystem namespace；本
+Pre-alpha 仓库仍不具备生产就绪性。
 
 ## 第三方边界
 

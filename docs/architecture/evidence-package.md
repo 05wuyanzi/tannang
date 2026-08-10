@@ -50,7 +50,28 @@ optional artifact reference per request.
 
 Synthetic orchestration tests use fake Finalizers and require no filesystem
 materialization. The seam does not define artifact bytes, paths, readers,
-streams, workspaces, writers, package layout, or hashing. `evidence.Create`
-remains the single-capability synthetic implementation above. A production
-multi-capability adapter and real Provider artifact transport are intentionally
-deferred to later reviewed Gates.
+streams, workspaces, package layout, or hashing. `evidence.Create` remains the
+single-capability synthetic implementation above. A production
+multi-capability adapter remains deferred to a later reviewed Gate.
+
+## Process identity snapshot writer boundary
+
+The explicit library-only `PROCESS_IDENTITY_SNAPSHOT` Provider candidate adds a
+narrow synchronous handoff, not package construction. It writes compact NDJSON
+records to one caller-owned `io.Writer` and returns an `execution.Result`.
+`execution.Result.Payload` remains synthetic compatibility only.
+
+The caller must construct a fresh, empty, exclusive, single-use, uncommitted,
+and wholly discardable candidate sink. `COLLECTED` and `PARTIAL` permit the
+caller to retain that candidate; `FAILED`, `BLOCKED`, and `SKIPPED` require
+whole-sink discard. Any writer failure is `FAILED/PROVIDER_ERROR`, even after
+complete rows, and the Provider does not claim physical rollback. Retainable
+`PARTIAL` output can arise only when the last successful write ended on a
+complete NDJSON line.
+
+The immediate descriptor contains only media type `application/x-ndjson` and
+the per-record schema ID. It defines no RAW/DERIVED classification. A future
+reviewed package adapter, not the Provider, must own PATHSAFE staging, path
+choice, close/flush, retain/discard enforcement, SHA-256, Artifact and Receipt
+references, Manifest creation, and publication. Until that adapter exists,
+writer output is serialized observations, not an Evidence Package artifact.

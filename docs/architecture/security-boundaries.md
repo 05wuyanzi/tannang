@@ -1,6 +1,8 @@
 # Genesis security boundaries
 
-The pre-alpha synthetic build is not approved for production or real evidence.
+The pre-alpha CLI and Application remain synthetic-only and are not approved
+for production or real evidence. A separate explicit library Provider candidate
+does not change that default boundary.
 
 - Only simple embedded fixture names are accepted.
 - On Windows, output must be an explicit canonical absolute path on allowed
@@ -40,10 +42,42 @@ process, PowerShell, WMI, service, registry/security change, or UAC action.
 Non-Windows probing returns `UNSUPPORTED` and fails closed. This build behavior
 is not a Linux or macOS support claim.
 
+## Explicit process-snapshot Provider boundary
+
+The library-only `PROCESS_IDENTITY_SNAPSHOT` candidate is the sole narrow real
+Provider implementation in this slice. It observes only process ID, parent
+process ID, and executable name through the Tool Help process snapshot family.
+It retains PID 0 and parent PID 0 as observations without interpretation. It
+does not use `OpenProcess`, command lines, full paths, owner/SID/token data,
+modules, threads, handles, memory, signatures, hashes, networking, child
+processes, WMI, PowerShell, privilege changes, or Active Trace.
+
+The Provider is synchronous and sequential. It creates at most one snapshot
+handle, holds one `PROCESSENTRY32W` and one encoded line, performs no sorting or
+deduplication, and starts no worker pool or background goroutine. Target
+compatibility is limited to canonical Fingerprint identifiers `amd64` and
+`x86`; Go's separate 32-bit build identifier is `windows/386`, which is only a
+compile/ABI claim until real x86-host acceptance occurs.
+
+The caller-owned writer must be fresh, empty, exclusive, single-use,
+uncommitted, and wholly discardable. The Provider cannot prove these properties
+for an arbitrary writer and does not claim rollback or truncation. Writer
+failure always makes the entire candidate sink non-retainable. Only a prefix
+ending on a complete NDJSON row may accompany `PARTIAL` caused by API failure,
+explicit cancellation, or deadline expiry. Execution `CANCELLED` is an
+attempted-Provider fact and remains distinct from application orchestration
+cancellation.
+
+This seam gives the Provider no filesystem path, close/flush, hashing,
+publication, Receipt, Manifest, or package authority. It is not wired into the
+CLI or FirstStage, is not protected baseline, and ordinary tests use only a fake
+process API. Real enumeration remains behind a separate opt-in benign Windows
+acceptance environment variable.
+
 The library-only FirstStage contract adds coordination, not collection. This
-slice commits no production baseline; its tests use synthetic Capability IDs
-only. No planned process, network, session, service, Event Log, or other
-Stage-1 evidence group is implemented. It invokes configured Providers
+slice commits no production baseline and still admits only `SYNTHETIC_TEST`
+bindings. The separate process-snapshot library candidate is not a FirstStage
+binding. FirstStage invokes configured Providers
 sequentially within each Run, records every accepted request, and has no worker
 pool, plugin framework, hidden fallback, or background collection. A
 FirstStage instance rejects an overlapping Run instead of queuing it; separate
@@ -56,9 +90,10 @@ cleanup/finalization uses a separate context bounded by trusted positive
 timeout; it cannot continue without that bound.
 
 The Finalizer boundary carries opaque references only. Existing synthetic
-Payload is not authority for future real Provider artifact transport, and the
-current implementation adds no artifact reader, stream, workspace, writer, or
-materialization contract. There is no production multi-capability package
+Payload is not authority for real Provider artifact transport. The narrow
+process-snapshot writer seam stops at caller-owned candidate bytes and an
+execution Result; it adds no workspace, materializer, filesystem ownership, or
+published artifact reference. There is no production multi-capability package
 adapter and no CLI wiring to FirstStage.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and

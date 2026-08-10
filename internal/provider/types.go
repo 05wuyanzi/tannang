@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/05wuyanzi/tannang/internal/capability"
@@ -61,6 +62,32 @@ type Descriptor struct {
 type Runner interface {
 	Descriptor() Descriptor
 	Execute(context.Context, capability.Capability, fingerprint.TargetFingerprint) execution.Result
+}
+
+// ArtifactDescriptor identifies the immediate serialized observation contract
+// without assigning package paths, hashes, or evidence classification.
+type ArtifactDescriptor struct {
+	MediaType       string `json:"media_type"`
+	ContentSchemaID string `json:"content_schema_id"`
+}
+
+// Validate rejects incomplete artifact metadata.
+func (d ArtifactDescriptor) Validate() error {
+	if strings.TrimSpace(d.MediaType) == "" {
+		return errors.New("artifact media type is required")
+	}
+	if strings.TrimSpace(d.ContentSchemaID) == "" {
+		return errors.New("artifact content schema id is required")
+	}
+	return nil
+}
+
+// StreamingRunner synchronously writes one candidate artifact to a
+// caller-owned sink. It is optional and does not change Runner.
+type StreamingRunner interface {
+	Descriptor() Descriptor
+	Artifact() ArtifactDescriptor
+	ExecuteTo(context.Context, capability.Capability, fingerprint.TargetFingerprint, io.Writer) execution.Result
 }
 
 // Valid reports whether a class is recognized.

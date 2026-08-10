@@ -40,6 +40,7 @@ const (
 	ReasonDependencyMissing     Reason = "DEPENDENCY_MISSING"
 	ReasonTargetStateRestricted Reason = "TARGET_STATE_RESTRICTED"
 	ReasonTimeout               Reason = "TIMEOUT"
+	ReasonCancelled             Reason = "CANCELLED"
 	ReasonProviderError         Reason = "PROVIDER_ERROR"
 	ReasonPolicyDisabled        Reason = "POLICY_DISABLED"
 	ReasonUnsupportedOS         Reason = "UNSUPPORTED_OS"
@@ -105,7 +106,7 @@ func (r Reason) Valid() bool {
 	switch r {
 	case ReasonNone, ReasonPrivilegeRequired, ReasonAPIUnavailable,
 		ReasonDependencyMissing, ReasonTargetStateRestricted, ReasonTimeout,
-		ReasonProviderError, ReasonPolicyDisabled, ReasonUnsupportedOS,
+		ReasonCancelled, ReasonProviderError, ReasonPolicyDisabled, ReasonUnsupportedOS,
 		ReasonUnsupportedArch:
 		return true
 	default:
