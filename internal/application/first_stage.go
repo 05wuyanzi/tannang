@@ -24,6 +24,7 @@ import (
 	"github.com/05wuyanzi/tannang/internal/execution"
 	"github.com/05wuyanzi/tannang/internal/fingerprint"
 	"github.com/05wuyanzi/tannang/internal/provider"
+	"github.com/05wuyanzi/tannang/internal/receipt"
 	"github.com/05wuyanzi/tannang/internal/resolver"
 )
 
@@ -162,6 +163,10 @@ type FirstStage struct {
 	resolve                ResolverFunc
 	finalizer              Finalizer
 	finalizationTimeout    time.Duration
+	realMode               bool
+	streamingRunner        provider.StreamingRunner
+	streamingDescriptor    provider.Descriptor
+	packageFactory         firstStagePackageFactory
 }
 
 // NewFirstStage validates and freezes trusted orchestration configuration.
@@ -341,6 +346,8 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 	result.Fingerprint = &retained
 
 	cancelled := false
+	var realSession firstStagePackageSession
+	var packageFailureErr error
 	for index := range result.Records {
 		if cancelled || ctx.Err() != nil {
 			cancelled = true
@@ -395,6 +402,14 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 			s.markCancelled(record)
 			continue
 		}
+		if s.realMode {
+			if err := s.runRealSelected(ctx, collection, target, record, &realSession, &cancelled); err != nil {
+				if packageFailureErr == nil {
+					packageFailureErr = err
+				}
+			}
+			continue
+		}
 		runner, exists := s.providers[selected.ID]
 		if !exists {
 			record.SelectedProvider = nil
@@ -426,15 +441,24 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 			return s.failFinalization(result, fmt.Errorf("validate terminal accounting for %q: %w", record.Request.ID, err)), nil
 		}
 	}
+	if packageFailureErr != nil {
+		return s.failFinalization(result, packageFailureErr), nil
+	}
 
 	finalizeContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.finalizationTimeout)
 	defer cancel()
-	finalization, finalizeErr := s.finalizer.Finalize(
-		finalizeContext,
-		collection,
-		target.Clone(),
-		cloneRecords(result.Records),
-	)
+	var finalization FinalizationResult
+	var finalizeErr error
+	if s.realMode {
+		finalization, finalizeErr = s.finalizeReal(finalizeContext, collection, target, result, realSession, cancelled)
+	} else {
+		finalization, finalizeErr = s.finalizer.Finalize(
+			finalizeContext,
+			collection,
+			target.Clone(),
+			cloneRecords(result.Records),
+		)
+	}
 	if finalizeErr != nil {
 		return s.failFinalization(result, finalizeErr), nil
 	}
@@ -557,8 +581,8 @@ func (r CapabilityRecord) Validate() error {
 	if !r.Attempted && r.Execution.State != execution.Skipped {
 		return errors.New("non-attempted accounting must use SKIPPED execution")
 	}
-	if r.SelectedProvider != nil && !r.Attempted && r.OrchestrationReason != OrchestrationCancelled {
-		return errors.New("selected non-attempted accounting requires CANCELLED orchestration reason")
+	if r.SelectedProvider != nil && !r.Attempted && r.OrchestrationReason != OrchestrationCancelled && !isPreAttemptPackageFailureRecord(r) {
+		return errors.New("selected non-attempted accounting requires CANCELLED or exact package-preparation failure")
 	}
 	if r.OrchestrationReason != "" {
 		if !r.OrchestrationReason.validForCapabilityRecord() {
@@ -579,6 +603,9 @@ func (r CapabilityRecord) Validate() error {
 	}
 	if r.OrchestrationReason == OrchestrationResolutionFailed && r.Compatibility != execution.Unavailable {
 		return errors.New("resolution failure accounting must use UNAVAILABLE compatibility")
+	}
+	if r.OrchestrationReason == OrchestrationPackageFinalizationFailed && !isPreAttemptPackageFailureRecord(r) {
+		return errors.New("capability package-finalization reason is reserved for exact pre-attempt package preparation failure")
 	}
 	for _, summary := range r.MissingEvidence {
 		if strings.TrimSpace(summary) == "" {
@@ -671,11 +698,29 @@ func (r RunResult) Validate() error {
 
 func (r OrchestrationReason) validForCapabilityRecord() bool {
 	switch r {
-	case OrchestrationUnknownCapability, OrchestrationResolutionFailed, OrchestrationCancelled:
+	case OrchestrationUnknownCapability, OrchestrationResolutionFailed, OrchestrationCancelled, OrchestrationPackageFinalizationFailed:
 		return true
 	default:
 		return false
 	}
+}
+
+func isPreAttemptPackageFailureRecord(r CapabilityRecord) bool {
+	return r.SelectedProvider != nil &&
+		r.Decision != nil &&
+		r.Decision.Selected != nil &&
+		r.Decision.Selected.ID == r.SelectedProvider.ID &&
+		r.Capability != nil &&
+		r.SelectedProvider.Supports(r.Request.ID) &&
+		r.Compatibility == r.Decision.Compatibility &&
+		!r.Attempted &&
+		r.Execution.State == execution.Skipped &&
+		r.Execution.Reason == execution.ReasonNone &&
+		r.OrchestrationReason == OrchestrationPackageFinalizationFailed &&
+		len(r.MissingEvidence) == 1 &&
+		r.MissingEvidence[0] == receipt.FirstStagePackagePreparationMissingEvidence &&
+		r.ArtifactReference == "" &&
+		r.ReceiptReference == ""
 }
 
 func (r OrchestrationReason) validForRunResult() bool {

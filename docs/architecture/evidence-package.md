@@ -56,7 +56,8 @@ multi-capability adapter remains deferred to a later reviewed Gate.
 
 ## Process identity snapshot writer boundary
 
-The explicit library-only `PROCESS_IDENTITY_SNAPSHOT` Provider candidate adds a
+The explicit library-only `PROCESS_IDENTITY_SNAPSHOT` Provider implementation
+adds a
 narrow synchronous handoff, not package construction. It writes compact NDJSON
 records to one caller-owned `io.Writer` and returns an `execution.Result`.
 `execution.Result.Payload` remains synthetic compatibility only.
@@ -71,7 +72,19 @@ complete NDJSON line.
 
 The immediate descriptor contains only media type `application/x-ndjson` and
 the per-record schema ID. It defines no RAW/DERIVED classification. A future
-reviewed package adapter, not the Provider, must own PATHSAFE staging, path
-choice, close/flush, retain/discard enforcement, SHA-256, Artifact and Receipt
-references, Manifest creation, and publication. Until that adapter exists,
-writer output is serialized observations, not an Evidence Package artifact.
+package adapter, not the Provider, must own PATHSAFE staging, path choice,
+close/flush, retain/discard enforcement, SHA-256, Artifact and Receipt
+references, Manifest creation, and publication. The bounded FirstStage
+candidate now implements that authority only for the single process-identity
+Capability; Provider output alone remains serialized observations, not a
+published Evidence Package artifact.
+
+The bounded FirstStage candidate supplies that single-capability adapter for
+`PROCESS_IDENTITY_SNAPSHOT`: it writes `derived/process-identity-snapshot.ndjson`
+only after exclusive staging, retains only valid `COLLECTED`/`PARTIAL` output,
+publishes one Receipt per request, verifies the existing self-excluding
+SHA-256 Manifest, records package start/finish timestamps, and keeps the
+downstream handoff disabled. The underlying Provider and its benign real-host
+acceptance are already reviewed; this FirstStage adapter remains an
+implementation candidate pending independent review and real integration
+acceptance, not a production-readiness claim.

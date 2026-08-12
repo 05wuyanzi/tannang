@@ -254,6 +254,25 @@ func TestWindowsUnsafeChildPathsRejected(t *testing.T) {
 	}
 }
 
+func TestWindowsRemoveFileRejectsReparseTarget(t *testing.T) {
+	output := filepath.Join(t.TempDir(), "package")
+	root, err := CreateTemporarySibling(output)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = root.Cleanup() })
+	if err := root.Mkdir("derived", 0o755); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(root.Path(), "derived", "redirect")
+	if err := os.Symlink(filepath.Join(t.TempDir(), "outside"), target); err != nil {
+		t.Skipf("Windows reparse oracle unavailable: %v", err)
+	}
+	if err := root.RemoveFile("derived/redirect"); !HasCode(err, CodeReparsePointDetected) {
+		t.Fatalf("RemoveFile reparse error = %v, want %s", err, CodeReparsePointDetected)
+	}
+}
+
 func TestWindowsDriveTypePolicy(t *testing.T) {
 	for _, allowed := range []uint32{driveRemovable, driveFixed} {
 		if err := validateDriveType(allowed); err != nil {

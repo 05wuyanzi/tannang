@@ -635,6 +635,58 @@ func TestUnknownAndResolutionFailureAccounting(t *testing.T) {
 	})
 }
 
+func TestSelectedNonAttemptedPackagePreparationFailureAccounting(t *testing.T) {
+	t.Parallel()
+	config := testConfig()
+	definition := config.CapabilityCatalog[0]
+	descriptor := config.Providers[0].Descriptor()
+	decision := resolver.Decision{
+		Selected:      &descriptor,
+		Compatibility: execution.Available,
+		Reason:        execution.ReasonNone,
+		Evaluations: []resolver.CandidateEvaluation{{
+			ProviderID: descriptor.ID, Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true,
+		}},
+	}
+	record := CapabilityRecord{
+		Request:             config.ProtectedBaseline[0],
+		Capability:          &definition,
+		Compatibility:       execution.Available,
+		Decision:            &decision,
+		SelectedProvider:    &descriptor,
+		Attempted:           false,
+		Execution:           unexecutedResult(execution.ReasonNone),
+		OrchestrationReason: OrchestrationPackageFinalizationFailed,
+		MissingEvidence:     []string{"The requested evidence is absent because package staging preparation failed before Provider execution."},
+	}
+	if err := record.Validate(); err != nil {
+		t.Fatalf("exact pre-attempt package failure was rejected: %v", err)
+	}
+	for name, mutate := range map[string]func(*CapabilityRecord){
+		"empty evidence":     func(value *CapabilityRecord) { value.MissingEvidence = nil },
+		"artifact reference": func(value *CapabilityRecord) { value.ArtifactReference = "derived/process-identity-snapshot.ndjson" },
+		"wrong reason":       func(value *CapabilityRecord) { value.OrchestrationReason = OrchestrationResolutionFailed },
+		"attempted":          func(value *CapabilityRecord) { value.Attempted = true },
+	} {
+		name, mutate := name, mutate
+		t.Run(name, func(t *testing.T) {
+			candidate := record
+			candidate.MissingEvidence = append([]string(nil), record.MissingEvidence...)
+			mutate(&candidate)
+			if err := candidate.Validate(); err == nil {
+				t.Fatalf("invalid package-preparation record unexpectedly validated: %+v", candidate)
+			}
+		})
+	}
+
+	cancelled := record
+	cancelled.OrchestrationReason = OrchestrationCancelled
+	cancelled.MissingEvidence = []string{"The request was not executed because the run was cancelled."}
+	if err := cancelled.Validate(); err != nil {
+		t.Fatalf("existing selected cancellation contract changed: %v", err)
+	}
+}
+
 func TestResolverCannotSubstituteAnUntrustedProviderDescriptor(t *testing.T) {
 	t.Parallel()
 	config := testConfig()

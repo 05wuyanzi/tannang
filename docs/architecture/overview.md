@@ -1,8 +1,8 @@
 # Genesis architecture
 
 Tannang is a Windows-first, platform-extensible evidence orchestration project.
-The current CLI and Application collection path still prove only the control
-path below with embedded synthetic data:
+The default CLI and existing generic Application collection path still prove
+only the control path below with embedded synthetic data:
 
 ```text
 CLI -> Capability -> Target Fingerprint -> Resolver -> Synthetic Provider
@@ -46,10 +46,10 @@ fail-closed unsupported result and do not imply Linux or macOS support.
 
 The v0.x Go module path is `github.com/05wuyanzi/tannang`.
 
-## Narrow process identity Provider candidate
+## Narrow process identity Provider implementation
 
 The repository contains one explicitly invoked, library-only
-`FIRST_PARTY_NATIVE` Provider candidate for
+`FIRST_PARTY_NATIVE` Provider implementation for
 `PROCESS_IDENTITY_SNAPSHOT/STATE_SNAPSHOT`. It uses
 `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)`, `Process32FirstW`, and
 `Process32NextW` sequentially and closes its one snapshot handle. Each NDJSON
@@ -75,15 +75,20 @@ discard. Writer failure always returns `FAILED/PROVIDER_ERROR`, never
 Execution `CANCELLED` means an attempted Provider was explicitly cancelled.
 It is separate from application `OrchestrationReason=CANCELLED`, which also
 accounts for selected work that was never launched. The candidate is not wired
-into the CLI or FirstStage, is not protected baseline, and has no production
-package adapter. Default tests use a fake Windows API and do not enumerate host
-processes; real-host acceptance is a separate opt-in Gate.
+into the CLI. The Provider implementation and its separate benign real-host
+acceptance have passed review. The bounded FirstStage implementation candidate
+now supplies a fixed constructor, code-level protected-baseline membership,
+and a single-capability package adapter; those product activation claims remain
+false until independent implementation review and the separate opt-in real
+FirstStage integration acceptance pass. Default tests use fake acquisition and
+do not enumerate host processes.
 
 ## First-stage orchestration contract
 
-`internal/application.FirstStage` is a library-only synthetic orchestration
-contract and is not wired into the CLI. Trusted configuration supplies a
-non-empty protected baseline; ordinary RunRequest input may add requests but
+`internal/application.FirstStage` remains a library-only orchestration contract
+and is not wired into the CLI. Its existing `NewFirstStage` construction path
+remains synthetic-only. Trusted configuration supplies a non-empty protected
+baseline; ordinary RunRequest input may add requests but
 cannot remove or create protected membership. Requests are merged and ordered
 deterministically by `EARLY`, `NORMAL`, `LATE`, protected membership, and
 Capability ID.
@@ -110,9 +115,16 @@ are not aliases of Provider execution states. Controlled cancellation stops new
 Provider launches and uses a separate bounded finalization context when startup
 prerequisites already succeeded.
 
-The Finalizer seam accepts copy-isolated accounting facts and returns only
-verification, package, receipt, and optional artifact references. This slice
-uses fake Finalizers in tests and does not implement a multi-capability package
-adapter. Existing synthetic Payload remains fixture compatibility only. The
-process-snapshot Provider's caller-owned writer seam is not a package adapter
-and does not produce a trusted artifact reference.
+The synthetic Finalizer seam accepts copy-isolated accounting facts and returns
+only verification, package, receipt, and optional artifact references. It
+remains behaviorally unchanged and uses fakes in tests. There is still no
+generic multi-capability package adapter. Existing synthetic Payload remains
+fixture compatibility only; the process-snapshot Provider's caller-owned
+writer seam itself is not package authority.
+
+The implementation candidate now supplies a private, fake-only test seam and a
+fixed production constructor for the single process-identity capability. Its
+package session owns one guarded staging tree, one optional derived NDJSON
+artifact, receipts, manifest verification, and no-overwrite publication. This
+candidate is pending independent implementation review and real integration
+acceptance; it does not activate the product or CLI.

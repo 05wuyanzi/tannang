@@ -8,9 +8,9 @@ point, junction, symbolic link, network path, or special device namespace. It
 also prevents `tannang verify` from following a reparse point in an untrusted
 package tree.
 
-This is a safety baseline for synthetic package I/O. It does not enable a real
-Windows Provider or real evidence collection, and it is not production
-hardened.
+This is a safety baseline for synthetic package I/O and the bounded
+process-snapshot package candidate. It does not by itself activate FirstStage,
+the protected baseline, or the CLI, and it is not production hardened.
 
 ## Threat model
 
@@ -133,3 +133,12 @@ fail-closed behavior by silently following unknown reparse points.
 - [Reparse Points](https://learn.microsoft.com/en-us/windows/win32/fileio/reparse-points)
 - [Hard Links and Junctions](https://learn.microsoft.com/en-us/windows/win32/fileio/hard-links-and-junctions)
 - [Symbolic Links](https://learn.microsoft.com/en-us/windows/win32/fileio/symbolic-links)
+
+## FirstStage candidate boundary
+
+The bounded FirstStage package session uses exclusive empty-file creation and
+exact-file removal beneath a validated temporary sibling. Safely absent removal
+is idempotent, while Abort performs one cached cleanup sequence and never
+mutates a published package. These semantics remain limited to
+`PREEXISTING_REDIRECTION_SAFETY`; privileged concurrent TOCTOU hardening is not
+claimed, and the candidate awaits independent implementation review.

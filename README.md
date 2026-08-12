@@ -27,21 +27,26 @@ The repository now also contains an explicit library-level implementation
 candidate for one narrow first-party native Windows Provider:
 `PROCESS_IDENTITY_SNAPSHOT`. It uses the Tool Help process snapshot API and
 emits only process ID, parent process ID, and executable name as NDJSON to a
-caller-owned writer. It is not wired into the CLI or FirstStage, is not in the
-protected baseline, has no production Evidence Package adapter, and has not
-passed the separate benign real-Windows acceptance Gate. Default tests do not
-enumerate host processes. Target compatibility is limited to `amd64` and
-`x86`; Go build validation uses `windows/amd64` and compile-only `windows/386`,
-which is not a native x86 real-host acceptance claim.
+caller-owned writer. The Provider implementation and its separate benign
+real-Windows acceptance have passed review. The bounded implementation
+candidate now adds a fixed library-level FirstStage constructor, code-level
+protected-baseline membership, and a single-capability Evidence Package
+adapter, while all activation flags and the CLI remain off pending independent
+implementation review and a separate real FirstStage integration acceptance.
+Default tests do not enumerate host processes. Target compatibility is limited
+to `amd64` and `x86`; Go build validation uses `windows/amd64` and compile-only
+`windows/386`, which is not a native x86 real-host acceptance claim.
 
 The repository also defines a library-only FirstStage orchestration contract.
-It merges a trusted protected baseline with additive synthetic requests,
+The existing `NewFirstStage` path remains synthetic-only and behaviorally
+unchanged. It merges a trusted protected baseline with additive requests,
 acquires one immutable Target Fingerprint, resolves and executes selected
 synthetic Providers sequentially within each Run, accounts for every request,
-and coordinates a bounded reference-only Finalizer seam. One FirstStage
-instance rejects overlapping Runs rather than queuing them; separate instances
-are independent. It is not wired into the CLI and does not add a real Stage-1
-Capability or evidence collection.
+and coordinates a bounded reference-only Finalizer seam. The dedicated process
+snapshot constructor is a separate, fixed candidate path and cannot inject an
+arbitrary Provider. One FirstStage instance rejects overlapping Runs rather
+than queuing them; separate instances are independent. Neither path is wired
+into the CLI.
 
 ## Why Tannang exists
 
@@ -58,10 +63,11 @@ The pre-alpha synthetic core currently provides:
 - a CLI for synthetic collection and package verification;
 - Capability and Target Fingerprint models;
 - a Provider abstraction and compatibility Resolver;
-- an explicit, library-only `PROCESS_IDENTITY_SNAPSHOT` Provider candidate
-  with a synchronous caller-owned writer boundary;
-- a synthetic, library-only FirstStage orchestration contract with explicit
-  per-request accounting;
+- an explicit, library-only `PROCESS_IDENTITY_SNAPSHOT` Provider implementation
+  with a synchronous caller-owned writer boundary and reviewed benign Windows
+  acceptance;
+- a synthetic-compatible FirstStage orchestration contract plus a separate
+  fixed real-provider FirstStage candidate with explicit per-request accounting;
 - an embedded Synthetic Provider with end-to-end fixtures;
 - separate compatibility and execution states;
 - execution receipt generation;
@@ -178,19 +184,26 @@ and [Windows path safety v0](docs/architecture/windows-path-safety.md).
 
 ```yaml
 supported_windows_matrix: not_yet_established
-real_windows_provider: false
-real_collection: false
+real_windows_provider: true
+real_collection: true
+real_collection_scope: PROCESS_IDENTITY_SNAPSHOT
+firststage_real_provider_activation: false
+protected_baseline_activation: false
+production_package_adapter: false
+cli_real_provider_activation: false
 active_trace: false
 production_ready: false
 forensic_certification: none
 judicial_validation: none
 ```
 
-There is no real Windows acquisition through the current CLI, FirstStage, or
-protected baseline, and there is no external backend integration, packet
-capture, or supported Legacy/Heritage Windows runtime in this release. The
-explicit process-snapshot Provider candidate is not an activation or production
-support claim.
+The current CLI and product-activated FirstStage/protected baseline do not
+perform real Windows acquisition. The reviewed process-snapshot Provider does
+support the explicit library collection scope `PROCESS_IDENTITY_SNAPSHOT`; the
+bounded FirstStage/package candidate remains unactivated pending independent
+implementation review and real integration acceptance. There is no external
+backend integration, packet capture, or supported Legacy/Heritage Windows
+runtime in this release.
 `LEGACY` and `HERITAGE` values in synthetic fixtures are test inputs, not
 support declarations.
 
@@ -200,19 +213,20 @@ imply support for any additional platform.
 
 The current synthetic `execution.Result.Payload` is fixture compatibility, not
 a transport contract for real Provider artifacts. The process-snapshot
-candidate instead defines only a synchronous caller-owned `io.Writer` handoff
-for serialized observations; the caller owns path choice, close/flush,
-retain/discard, hashing, and publication. There is no production
-multi-capability package adapter in this release, and writer output is not by
-itself an Evidence Package or published artifact reference.
+Provider defines only a synchronous caller-owned `io.Writer` handoff for
+serialized observations; the bounded FirstStage candidate owns path choice,
+close/flush, retain/discard, hashing, and publication only for this one
+Capability. There is no generic multi-capability package adapter, and writer
+output is not by itself an Evidence Package or published artifact reference.
 
 ## Roadmap
 
-The next Windows-focused engineering Gates are independent review of the narrow
-Provider candidate, opt-in benign Windows acceptance, and only then a separate
-decision about FirstStage/protected-baseline activation. The current path
-baseline does not claim resistance to privileged concurrent namespace races,
-and this pre-alpha repository remains non-production.
+The next Windows-focused engineering Gates are independent implementation
+review of the bounded FirstStage candidate, opt-in real FirstStage integration
+acceptance, and only then a separate decision about FirstStage/protected-
+baseline activation. The current path baseline does not claim resistance to
+privileged concurrent namespace races, and this pre-alpha repository remains
+non-production.
 
 ## Third-party boundary
 
@@ -242,3 +256,11 @@ open a public Issue for a suspected vulnerability. See
 
 Tannang is licensed under the Mozilla Public License 2.0. See
 [LICENSE](LICENSE).
+
+## FirstStage process snapshot candidate
+
+The reviewed implementation candidate adds a narrow library-level
+`PROCESS_IDENTITY_SNAPSHOT` FirstStage path with a fixed Windows Tool Help
+Provider, guarded staging, receipts, SHA-256 manifest verification, and no CLI
+activation. It remains pending independent implementation review and real
+integration acceptance; activation and production-readiness flags remain false.

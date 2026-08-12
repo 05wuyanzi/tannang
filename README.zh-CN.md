@@ -21,20 +21,21 @@ pre-alpha 仓库已具备生产就绪性。仓库 slug 和 CLI 均为 `tannang`�
 `github.com/05wuyanzi/tannang`。
 
 仓库现在还包含一个必须显式调用、仅供库使用的窄范围 first-party native Windows
-Provider 实施候选：`PROCESS_IDENTITY_SNAPSHOT`。它使用 Tool Help 进程快照 API，
-只把进程 ID、父进程 ID 与可执行文件名以 NDJSON 写入调用方拥有的 writer。它未接入
-CLI 或 FirstStage，不属于 protected baseline，没有生产 Evidence Package 适配器，且
-尚未通过独立的 benign real-Windows acceptance Gate。默认测试不会枚举主机进程。
-Target compatibility 仅限 `amd64` 与 `x86`；Go build 验证使用
-`windows/amd64` 和仅编译的 `windows/386`，后者不代表已完成 native x86 真实主机
-验收。
+Provider 实现：`PROCESS_IDENTITY_SNAPSHOT`。它使用 Tool Help 进程快照 API，
+只把进程 ID、父进程 ID 与可执行文件名以 NDJSON 写入调用方拥有的 writer。该 Provider
+实现及其独立 benign real-Windows acceptance 已通过评审。当前有界实现候选进一步增加
+固定的库级 FirstStage 构造函数、代码级 protected-baseline membership 与单 Capability
+Evidence Package 适配器；在独立实现复核和单独的真实 FirstStage 集成验收完成前，所有
+激活标志及 CLI 仍保持关闭。默认测试不会枚举主机进程。Target compatibility 仅限
+`amd64` 与 `x86`；Go build 验证使用 `windows/amd64` 和仅编译的 `windows/386`，
+后者不代表已完成 native x86 真实主机验收。
 
-仓库还定义了一个仅供库调用的 FirstStage 编排合同：它把可信的受保护 baseline 与
-附加 synthetic 请求合并，为每个 run 获取一次不可变 Target Fingerprint，在单个 Run
-内按顺序解析并执行选定的 synthetic Provider，完整记账所有请求，并协调一个有界、
-仅返回引用和结果的 Finalizer seam。同一 FirstStage 实例会拒绝而不是排队等待重叠
-Run；不同实例彼此独立。该合同未接入 CLI，也没有增加任何真实 Stage-1 Capability 或
-证据采集。
+仓库还定义了一个仅供库调用的 FirstStage 编排合同。既有 `NewFirstStage` 路径保持
+synthetic-only 且行为不变：它把可信的受保护 baseline 与附加请求合并，为每个 run
+获取一次不可变 Target Fingerprint，在单个 Run 内顺序解析并执行 synthetic Provider，
+完整记账所有请求，并协调有界、仅返回引用和结果的 Finalizer seam。专用进程快照构造
+函数是独立的固定候选路径，不能注入任意 Provider。同一 FirstStage 实例会拒绝而不是
+排队等待重叠 Run；不同实例彼此独立，两个路径均未接入 CLI。
 
 ## 为什么需要探囊
 
@@ -49,9 +50,10 @@ Pre-alpha synthetic core 当前包括：
 - 用于 synthetic 采集和证据包验证的 CLI；
 - Capability 与 Target Fingerprint 模型；
 - Provider 抽象与兼容性 Resolver；
-- 显式、仅供库使用的 `PROCESS_IDENTITY_SNAPSHOT` Provider 实施候选及同步的
-  caller-owned writer 边界；
-- 仅限 synthetic、库级的 FirstStage 编排合同及明确的逐请求记账；
+- 显式、仅供库使用的 `PROCESS_IDENTITY_SNAPSHOT` Provider 实现、同步的
+  caller-owned writer 边界及已评审的 benign Windows acceptance；
+- 保持 synthetic 兼容的 FirstStage 编排合同，以及独立的固定真实 Provider
+  候选路径和明确的逐请求记账；
 - 使用内嵌数据的 Synthetic Provider 和端到端 fixture；
 - 相互独立的 compatibility 与 execution 状态；
 - Execution Receipt 生成；
@@ -162,34 +164,41 @@ reports/
 
 ```yaml
 supported_windows_matrix: not_yet_established
-real_windows_provider: false
-real_collection: false
+real_windows_provider: true
+real_collection: true
+real_collection_scope: PROCESS_IDENTITY_SNAPSHOT
+firststage_real_provider_activation: false
+protected_baseline_activation: false
+production_package_adapter: false
+cli_real_provider_activation: false
 active_trace: false
 production_ready: false
 forensic_certification: none
 judicial_validation: none
 ```
 
-当前 CLI、FirstStage 与 protected baseline 不包含真实 Windows 采集；当前版本也不
+当前 CLI 与产品已激活的 FirstStage/protected baseline 不执行真实 Windows 采集；已
+评审的进程快照 Provider 支持显式的 `PROCESS_IDENTITY_SNAPSHOT` 库采集范围。有界的
+FirstStage/Package 候选仍等待独立实现复核和真实集成验收，尚未激活。当前版本也不
 包含 External Backend 集成、Packet Capture，且不支持 Legacy/Heritage Windows
-runtime。显式进程快照 Provider 实施候选不代表已经激活或获得生产支持。
+runtime。
 Synthetic fixture 中的 `LEGACY` 与 `HERITAGE` 只是测试输入，不代表支持声明。
 
 探囊当前以 Windows 为目标。证据与编排合同有意和 Provider 实现分离，但这并不
 代表当前支持其他平台。
 
 当前 synthetic `execution.Result.Payload` 只是 fixture 兼容机制，并不是未来真实
-Provider 的制品传输合同。进程快照候选仅定义同步的 caller-owned `io.Writer` 交接来
-传递 serialized observations；path 选择、close/flush、retain/discard、Hash 与发布
-均由调用方负责。当前版本没有生产级多 Capability 证据包适配器，writer 输出本身也
-不等于 Evidence Package 或已发布的 artifact reference。
+Provider 的制品传输合同。进程快照 Provider 仅定义同步的 caller-owned `io.Writer` 交接
+来传递 serialized observations；有界的 FirstStage 候选只为这个 Capability 负责 path
+选择、close/flush、retain/discard、Hash 与发布。当前没有通用多 Capability 证据包适配器，
+writer 输出本身也不等于 Evidence Package 或已发布的 artifact reference。
 
 ## 路线图
 
-后续 Windows 工程 Gate 依次是窄范围 Provider 实施的独立复核、显式选择加入的
-benign Windows acceptance，以及之后单独决定是否接入 FirstStage/protected
-baseline。当前路径基线不声称抵抗高权限进程并发替换 filesystem namespace；本
-Pre-alpha 仓库仍不具备生产就绪性。
+后续 Windows 工程 Gate 依次是有界 FirstStage 候选的独立实现复核、显式选择加入的
+真实 FirstStage 集成验收，以及之后单独决定是否激活 FirstStage/protected baseline。
+当前路径基线不声称抵抗高权限进程并发替换 filesystem namespace；本 Pre-alpha 仓库
+仍不具备生产就绪性。
 
 ## 第三方边界
 
@@ -215,3 +224,10 @@ third_party_binary_executed_by_default: false
 ## 许可证
 
 探囊使用 Mozilla Public License 2.0，详见 [LICENSE](LICENSE)。
+
+## FirstStage 进程快照候选实现
+
+已评审的候选实现新增窄范围的 `PROCESS_IDENTITY_SNAPSHOT` FirstStage 库路径，固定
+绑定 Windows Tool Help Provider，并使用受 PATHSAFE 保护的 staging、Receipt、SHA-256
+Manifest 验证；CLI 仍未激活。该候选仍等待独立实现复核和真实集成验收，激活及生产就绪
+标志保持为 false。

@@ -1,8 +1,9 @@
 # Genesis security boundaries
 
-The pre-alpha CLI and Application remain synthetic-only and are not approved
-for production or real evidence. A separate explicit library Provider candidate
-does not change that default boundary.
+The pre-alpha CLI and existing generic Application path remain synthetic-only
+and are not approved for production or real evidence. A separate explicit
+library Provider implementation and its bounded FirstStage candidate do not
+change that default boundary or activate the product path.
 
 - Only simple embedded fixture names are accepted.
 - On Windows, output must be an explicit canonical absolute path on allowed
@@ -70,16 +71,19 @@ cancellation.
 
 This seam gives the Provider no filesystem path, close/flush, hashing,
 publication, Receipt, Manifest, or package authority. It is not wired into the
-CLI or FirstStage, is not protected baseline, and ordinary tests use only a fake
-process API. Real enumeration remains behind a separate opt-in benign Windows
-acceptance environment variable.
+CLI, and ordinary tests use fake acquisition. The Provider implementation and
+its separate benign Windows acceptance have passed review. The bounded
+FirstStage candidate adds code-level protected-baseline membership, but the
+activation claim remains false until its independent implementation review and
+separate opt-in real FirstStage acceptance pass.
 
-The library-only FirstStage contract adds coordination, not collection. This
-slice commits no production baseline and still admits only `SYNTHETIC_TEST`
-bindings. The separate process-snapshot library candidate is not a FirstStage
-binding. FirstStage invokes configured Providers
-sequentially within each Run, records every accepted request, and has no worker
-pool, plugin framework, hidden fallback, or background collection. A
+The library-only FirstStage contract adds coordination around explicitly
+bounded collection. Existing `NewFirstStage` construction still admits only
+`SYNTHETIC_TEST` bindings. The separate fixed process-snapshot constructor is
+the sole real binding candidate and does not create a generic injection
+authority. FirstStage invokes selected Providers sequentially within each Run,
+records every accepted request, and has no worker pool, plugin framework,
+hidden fallback, or background collection. A
 FirstStage instance rejects an overlapping Run instead of queuing it; separate
 instances are independent and no process-global scheduler is introduced.
 
@@ -89,12 +93,19 @@ cancellation stops new Provider launches. When prerequisites have succeeded,
 cleanup/finalization uses a separate context bounded by trusted positive
 timeout; it cannot continue without that bound.
 
-The Finalizer boundary carries opaque references only. Existing synthetic
-Payload is not authority for real Provider artifact transport. The narrow
-process-snapshot writer seam stops at caller-owned candidate bytes and an
-execution Result; it adds no workspace, materializer, filesystem ownership, or
-published artifact reference. There is no production multi-capability package
+The synthetic Finalizer boundary carries opaque references only. Existing
+synthetic Payload is not authority for real Provider artifact transport. The
+narrow process-snapshot writer seam stops at caller-owned candidate bytes and
+an execution Result; the bounded FirstStage session, not the Provider, owns the
+single-capability package lifecycle. There is no generic multi-capability
 adapter and no CLI wiring to FirstStage.
+
+The bounded implementation candidate adds only the fixed process-identity
+package session and its unexported deterministic test seam. Providers still
+receive only an `io.Writer`; PATHSAFE owns exclusive creation, exact-file
+discard, and no-overwrite publication. The candidate claims only
+`PREEXISTING_REDIRECTION_SAFETY` and remains pending independent review and
+real integration acceptance.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It

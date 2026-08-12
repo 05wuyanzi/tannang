@@ -231,18 +231,33 @@ func inventory(root string) (packageInventory, error) {
 	return packageInventory{Directories: directories, Entries: entries}, nil
 }
 
-func hashFile(root, relative string) (Entry, error) {
+// HashFile hashes one existing package-relative file through PATHSAFE.
+func HashFile(root, relative string) (Entry, error) {
 	file, err := pathsafe.OpenFile(root, relative)
 	if err != nil {
 		return Entry{}, fmt.Errorf("open package file %s: %w", relative, err)
 	}
-	defer file.Close()
 	hash := sha256.New()
 	size, err := io.Copy(hash, file)
-	if err != nil {
-		return Entry{}, fmt.Errorf("hash package file %s: %w", relative, err)
+	closeErr := file.Close()
+	if err != nil || closeErr != nil {
+		return Entry{}, errors.Join(
+			wrapOptional("hash package file "+relative, err),
+			wrapOptional("close package file "+relative, closeErr),
+		)
 	}
 	return Entry{Path: relative, Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
+}
+
+func hashFile(root, relative string) (Entry, error) {
+	return HashFile(root, relative)
+}
+
+func wrapOptional(prefix string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", prefix, err)
 }
 
 func validateRelativePath(path string) error {

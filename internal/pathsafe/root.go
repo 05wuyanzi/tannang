@@ -23,6 +23,8 @@ type OutputRoot struct {
 	complete    bool
 }
 
+const integrationArtifactFileMode fs.FileMode = 0o600
+
 // ValidateOutputPath validates a new output location without creating it.
 func ValidateOutputPath(output string) error {
 	abs, err := platformValidateAbsoluteLocalPath(output)
@@ -107,6 +109,75 @@ func (r *OutputRoot) Mkdir(relative string, perm fs.FileMode) error {
 // WriteFile creates one new package-relative file without overwrite semantics.
 func (r *OutputRoot) WriteFile(relative string, data []byte, perm fs.FileMode) error {
 	return WriteNewFile(r.path, relative, data, perm)
+}
+
+// CreateFile creates one fresh, exclusive, empty regular file for a streaming
+// artifact. The bounded mode is intentionally fixed so callers cannot widen
+// the package's file permissions through this integration seam.
+func (r *OutputRoot) CreateFile(relative string, perm fs.FileMode) (*os.File, error) {
+	if r == nil || r.complete {
+		return nil, reject(CodeUnsafePath, "create package file", "output root is unavailable for staging")
+	}
+	if perm.Perm() != integrationArtifactFileMode {
+		return nil, reject(CodeUnsafePath, "create package file", "streaming artifact mode is outside the fixed policy")
+	}
+	full, err := prepareNewChild(r.path, relative, "create package file")
+	if err != nil {
+		return nil, err
+	}
+	file, err := os.OpenFile(full, os.O_CREATE|os.O_EXCL|os.O_WRONLY, integrationArtifactFileMode)
+	if err != nil {
+		return nil, rejectCause(CodeUnsafePath, "create package file", "exclusive file creation failed", err)
+	}
+	if err := validateExistingRegularFile(full, "revalidate created package file"); err != nil {
+		_ = file.Close()
+		return nil, err
+	}
+	info, statErr := file.Stat()
+	if statErr != nil || !info.Mode().IsRegular() {
+		_ = file.Close()
+		return nil, rejectCause(CodeUnsafePackageTree, "revalidate created package file", "created handle is not a regular file", statErr)
+	}
+	if info.Size() != 0 {
+		_ = file.Close()
+		return nil, reject(CodeUnsafePackageTree, "revalidate created package file", "created streaming file is not empty")
+	}
+	return file, nil
+}
+
+// RemoveFile removes exactly one guarded package-relative regular file. A
+// safely verified absent target is already in the desired terminal state.
+func (r *OutputRoot) RemoveFile(relative string) error {
+	if r == nil || r.complete {
+		return reject(CodeUnsafePath, "remove package file", "output root is unavailable for mutation")
+	}
+	full, err := prepareExistingChild(r.path, relative, "remove package file")
+	if err != nil {
+		return err
+	}
+	info, err := os.Lstat(full)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return rejectCause(CodeUnsafePath, "remove package file", "target state cannot be determined", err)
+	}
+	if err := platformValidateExistingPath(full); err != nil {
+		return err
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.Mode().IsRegular() || info.IsDir() {
+		return reject(CodeUnsafePackageTree, "remove package file", "target is not a regular non-reparse file")
+	}
+	if err := os.Remove(full); err != nil {
+		return rejectCause(CodeUnsafePackageTree, "remove package file", "exact file removal failed", err)
+	}
+	if _, err := os.Lstat(full); !errors.Is(err, os.ErrNotExist) {
+		if err == nil {
+			return reject(CodeUnsafePackageTree, "remove package file", "target remained after removal")
+		}
+		return rejectCause(CodeUnsafePackageTree, "remove package file", "target absence could not be verified", err)
+	}
+	return nil
 }
 
 // Publish rechecks a verified temporary tree and renames it to its final path.
