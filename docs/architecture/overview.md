@@ -1,8 +1,8 @@
 # Genesis architecture
 
 Tannang is a Windows-first, platform-extensible evidence orchestration project.
-The default CLI and existing generic Application collection path still prove
-only the control path below with embedded synthetic data:
+The default CLI collection mode and existing generic Application collection
+path still prove only the control path below with embedded synthetic data:
 
 ```text
 CLI -> Capability -> Target Fingerprint -> Resolver -> Synthetic Provider
@@ -74,19 +74,20 @@ discard. Writer failure always returns `FAILED/PROVIDER_ERROR`, never
 
 Execution `CANCELLED` means an attempted Provider was explicitly cancelled.
 It is separate from application `OrchestrationReason=CANCELLED`, which also
-accounts for selected work that was never launched. The candidate is not wired
-into the CLI. The Provider implementation and its separate benign real-host
+accounts for selected work that was never launched. The candidate is exposed
+only by the explicit `collect --process-identity-snapshot` CLI mode. The
+Provider implementation and its separate benign real-host
 acceptance have passed review. The bounded FirstStage implementation candidate
 now supplies a fixed constructor, code-level protected-baseline membership,
-and a single-capability package adapter; those product activation claims remain
-false until independent implementation review and the separate opt-in real
-FirstStage integration acceptance pass. Default tests use fake acquisition and
-do not enumerate host processes.
+and a single-capability package adapter. Independent review and bounded real
+Windows CLI acceptance are complete; those validation gates do not change
+product activation authority, and the activation claims remain false. Default
+tests use fake acquisition and do not enumerate host processes.
 
 ## First-stage orchestration contract
 
-`internal/application.FirstStage` remains a library-only orchestration contract
-and is not wired into the CLI. Its existing `NewFirstStage` construction path
+`internal/application.FirstStage` remains a library-owned orchestration contract.
+Its existing `NewFirstStage` construction path
 remains synthetic-only. Trusted configuration supplies a non-empty protected
 baseline; ordinary RunRequest input may add requests but
 cannot remove or create protected membership. Requests are merged and ordered
@@ -125,6 +126,8 @@ writer seam itself is not package authority.
 The implementation candidate now supplies a private, fake-only test seam and a
 fixed production constructor for the single process-identity capability. Its
 package session owns one guarded staging tree, one optional derived NDJSON
-artifact, receipts, manifest verification, and no-overwrite publication. This
-candidate is pending independent implementation review and real integration
-acceptance; it does not activate the product or CLI.
+artifact, receipts, manifest verification, and no-overwrite publication.
+Independent review and bounded real Windows CLI acceptance are complete; this
+does not activate the product. The CLI candidate invokes only the fixed
+production constructor and returns a bounded health summary rather than a
+serialized `RunResult` or Provider payload.

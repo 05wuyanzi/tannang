@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**Status:** Pre-alpha · Synthetic CLI/Application · Not production ready
+**Status:** Pre-alpha · Explicit Windows real-collection CLI candidate · Not production ready
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -14,8 +14,8 @@ Tannang is a Windows-first project for describing acquisition intent,
 evaluating provider compatibility, recording execution outcomes, and packaging
 evidence with auditable integrity metadata.
 
-The default CLI and Application path remain synthetic-only: they use embedded
-fixtures and do not perform real incident-response evidence collection. The
+The default CLI collection mode remains synthetic-only: it uses embedded
+fixtures and does not perform real incident-response evidence collection. The
 repository also contains an explicitly invoked, bounded Windows Target
 Fingerprint probe. It reads limited local compatibility, resource, privilege,
 and output-volume facts; it is not evidence acquisition, creates no Evidence
@@ -30,10 +30,14 @@ emits only process ID, parent process ID, and executable name as NDJSON to a
 caller-owned writer. The Provider implementation and its separate benign
 real-Windows acceptance have passed review. The bounded implementation
 candidate now adds a fixed library-level FirstStage constructor, code-level
-protected-baseline membership, and a single-capability Evidence Package
-adapter, while all activation flags and the CLI remain off pending independent
-implementation review and a separate real FirstStage integration acceptance.
-Default tests do not enumerate host processes. Target compatibility is limited
+protected-baseline membership, a single-capability Evidence Package adapter,
+and one explicit CLI candidate mode. It is selected only with
+`--process-identity-snapshot`; it does not expose Provider selection or extra
+capabilities. This explicit CLI path has completed independent review and
+bounded real Windows CLI acceptance. Those validation gates do not change
+activation authority: all activation flags remain false. Default tests do not
+enumerate host processes.
+Target compatibility is limited
 to `amd64` and `x86`; Go build validation uses `windows/amd64` and compile-only
 `windows/386`, which is not a native x86 real-host acceptance claim.
 
@@ -45,8 +49,8 @@ synthetic Providers sequentially within each Run, accounts for every request,
 and coordinates a bounded reference-only Finalizer seam. The dedicated process
 snapshot constructor is a separate, fixed candidate path and cannot inject an
 arbitrary Provider. One FirstStage instance rejects overlapping Runs rather
-than queuing them; separate instances are independent. Neither path is wired
-into the CLI.
+than queuing them; separate instances are independent. The fixed real path is
+exposed only by the explicit CLI mode.
 
 ## Why Tannang exists
 
@@ -112,8 +116,9 @@ Evidence Package
 
 The provider contract defines `WINDOWS_INBOX`, `FIRST_PARTY_NATIVE`, and
 `EXTERNAL_BACKEND`. A bounded `FIRST_PARTY_NATIVE` process-snapshot Provider
-candidate exists only as an explicitly invoked library API. `SYNTHETIC_TEST`
-remains the only Provider class reachable from the current CLI and FirstStage.
+candidate is reachable only through the explicit
+`collect --process-identity-snapshot` CLI mode. `SYNTHETIC_TEST` remains the
+default collection mode and the only class reachable through `--synthetic`.
 
 See [`contracts/`](contracts/) for machine-readable contracts and
 [`docs/architecture/`](docs/architecture/) for the detailed architecture and
@@ -121,7 +126,7 @@ security boundaries.
 
 ## Quick start
 
-**Synthetic only. These commands do not collect data from the host.**
+**Synthetic collection. These commands do not collect data from the host.**
 
 With Go 1.21 or later, run from the repository root:
 
@@ -136,6 +141,22 @@ The output path must be a canonical absolute path on allowed local fixed or
 removable storage, its parent must exist, and the output itself must not exist.
 Collection reads the named embedded fixture, creates a synthetic Evidence
 Package, and refuses unsafe paths or overwrite.
+
+## Explicit Windows process snapshot candidate
+
+On Windows, the only real CLI collection candidate is an explicit request for
+`PROCESS_IDENTITY_SNAPSHOT`. It creates a new verified Evidence Package with
+receipt and manifest references, or reports honest partial, skipped, blocked,
+failed, or finalization outcomes. It does not provide risk scoring, malware
+verdicts, remediation, credential collection, or broad endpoint enumeration.
+
+```powershell
+$package = Join-Path (Get-Location) "tannang-process-snapshot"
+go run ./cmd/tannang collect --process-identity-snapshot --output $package --case-id CASE-01
+go run ./cmd/tannang verify $package
+```
+
+This is a pre-alpha implementation candidate, not a production-ready claim.
 
 ## Evidence package
 
@@ -197,11 +218,11 @@ forensic_certification: none
 judicial_validation: none
 ```
 
-The current CLI and product-activated FirstStage/protected baseline do not
-perform real Windows acquisition. The reviewed process-snapshot Provider does
-support the explicit library collection scope `PROCESS_IDENTITY_SNAPSHOT`; the
-bounded FirstStage/package candidate remains unactivated pending independent
-implementation review and real integration acceptance. There is no external
+The default CLI and product-activated FirstStage/protected baseline do not
+perform real Windows acquisition. The explicit CLI candidate supports the
+reviewed `PROCESS_IDENTITY_SNAPSHOT` scope through the fixed FirstStage path.
+Its independent review and bounded real Windows CLI acceptance are complete,
+but it remains unactivated and all activation flags remain false. There is no external
 backend integration, packet capture, or supported Legacy/Heritage Windows
 runtime in this release.
 `LEGACY` and `HERITAGE` values in synthetic fixtures are test inputs, not
@@ -261,6 +282,6 @@ Tannang is licensed under the Mozilla Public License 2.0. See
 
 The reviewed implementation candidate adds a narrow library-level
 `PROCESS_IDENTITY_SNAPSHOT` FirstStage path with a fixed Windows Tool Help
-Provider, guarded staging, receipts, SHA-256 manifest verification, and no CLI
-activation. It remains pending independent implementation review and real
-integration acceptance; activation and production-readiness flags remain false.
+Provider, guarded staging, receipts, SHA-256 manifest verification, and an
+explicit CLI candidate mode. Independent review and bounded real Windows CLI
+acceptance are complete; activation and production-readiness flags remain false.
