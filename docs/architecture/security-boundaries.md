@@ -1,6 +1,6 @@
 # Genesis security boundaries
 
-The normal pre-alpha `collect --output` activation candidate invokes only the
+The current pre-alpha `collect --output` path invokes only the
 fixed process-snapshot FirstStage path. Its non-removable protected baseline
 contains exactly `PROCESS_IDENTITY_SNAPSHOT`. `--process-identity-snapshot`
 confirms the same baseline without adding a request, while `--synthetic` remains
@@ -47,7 +47,7 @@ is not a Linux or macOS support claim.
 
 ## Explicit process-snapshot Provider boundary
 
-The library-only `PROCESS_IDENTITY_SNAPSHOT` candidate is the sole narrow real
+The library-level `PROCESS_IDENTITY_SNAPSHOT` implementation is the sole narrow real
 Provider implementation in this slice. It observes only process ID, parent
 process ID, and executable name through the Tool Help process snapshot family.
 It retains PID 0 and parent PID 0 as observations without interpretation. It
@@ -81,7 +81,7 @@ and its separate benign Windows acceptance have passed review.
 The library-only FirstStage contract adds coordination around explicitly
 bounded collection. Existing `NewFirstStage` construction still admits only
 `SYNTHETIC_TEST` bindings. The separate fixed process-snapshot constructor is
-the sole real binding candidate and does not create a generic injection
+the sole real binding and does not create a generic injection
 authority. FirstStage invokes selected Providers sequentially within each Run,
 records every accepted request, and has no worker pool, plugin framework,
 hidden fallback, or background collection. A
@@ -104,13 +104,15 @@ fixed real FirstStage, invokes only that single-capability constructor, and does
 not expose Provider, Resolver, backend, supplemental, or baseline-removal
 selection.
 
-The bounded implementation candidate adds only the fixed process-identity
+The integrated implementation adds only the fixed process-identity
 package session and its unexported deterministic test seam. Providers still
 receive only an `io.Writer`; PATHSAFE owns exclusive creation, exact-file
-discard, and no-overwrite publication. The candidate claims only
-`PREEXISTING_REDIRECTION_SAFETY`. The protected-baseline activation candidate
-remains `PUBLIC_PRE_ALPHA`, adds no second real capability, and is not
-production ready.
+discard, and no-overwrite publication. The implementation claims only
+`PREEXISTING_REDIRECTION_SAFETY`. The active protected baseline remains
+`PUBLIC_PRE_ALPHA`, adds no second real capability, and is not production
+ready. This one capability completes the intentionally narrow M4 Minimum
+Useful Baseline on `dev`; it is not a comprehensive capability, main
+integration, or release claim.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It
