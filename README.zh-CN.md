@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**状态：** Pre-alpha · 受保护的进程身份 baseline 激活候选 · Not production ready
+**状态：** Pre-alpha · 受保护的进程身份 baseline 已激活 · Not production ready
 
 **简体中文** | [English](README.md)
 
@@ -13,7 +13,7 @@
 探囊是一个 Windows-first 工程项目，用于描述采集意图、评估 Provider
 兼容性、记录执行结果，并将证据与可审计的完整性元数据一起封装。
 
-普通 `collect --output` CLI 候选会运行一个不可删减的受保护 baseline capability：
+普通 `collect --output` CLI 会运行一个不可删减的受保护 baseline capability：
 `PROCESS_IDENTITY_SNAPSHOT`。显式 `--synthetic` 路径继续使用内嵌 fixture，不执行真实
 事件响应证据采集。固定真实 FirstStage 使用的有界 Windows Target Fingerprint 只读取
 少量本机兼容性、资源、权限与输出卷事实；它不是真实 Provider，不进行网络采集，也不
@@ -23,9 +23,9 @@
 仓库现在还包含一个固定、仅供库使用的窄范围 first-party native Windows
 Provider 实现：`PROCESS_IDENTITY_SNAPSHOT`。它使用 Tool Help 进程快照 API，
 只把进程 ID、父进程 ID 与可执行文件名以 NDJSON 写入调用方拥有的 writer。该 Provider
-实现及其独立 benign real-Windows acceptance 已通过评审。当前有界实现候选进一步增加
+实现及其独立 benign real-Windows acceptance 已通过评审。当前有界实现提供
 固定的库级 FirstStage 构造函数、代码级 protected-baseline membership 与单 Capability
-Evidence Package 适配器。当前激活候选让普通 `collect --output` 使用这一固定路径；
+Evidence Package 适配器。当前已激活的受保护 baseline 让普通 `collect --output` 使用这一固定路径；
 `--process-identity-snapshot` 继续作为同一 baseline 的兼容显式确认，不会重复请求。
 它不暴露 Provider 选择或额外 Capability。默认测试注入 fake acquisition，不会枚举主机
 进程。Target compatibility 仅限
@@ -37,7 +37,7 @@ synthetic-only 且行为不变：它把可信的受保护 baseline 与附加请�
 获取一次不可变 Target Fingerprint，在单个 Run 内顺序解析并执行 synthetic Provider，
 完整记账所有请求，并协调有界、仅返回引用和结果的 Finalizer seam。专用进程快照构造
 函数是独立的固定路径，不能注入任意 Provider。同一 FirstStage 实例会拒绝而不是排队
-等待重叠 Run；不同实例彼此独立，普通产品采集候选与显式兼容 flag 使用同一固定真实路径。
+等待重叠 Run；不同实例彼此独立，普通产品采集与显式兼容 flag 使用同一固定真实路径。
 
 ## 为什么需要探囊
 
@@ -49,7 +49,7 @@ Provider、它是否兼容、执行时实际发生了什么，以及最终证据
 
 Pre-alpha 实现当前包括：
 
-- 带一个受保护真实 baseline、显式 synthetic 路径和证据包验证的普通 CLI 采集候选；
+- 带一个受保护真实 baseline、显式 synthetic 路径和证据包验证的普通 CLI 采集；
 - Capability 与 Target Fingerprint 模型；
 - Provider 抽象与兼容性 Resolver；
 - 固定、仅供库使用的 `PROCESS_IDENTITY_SNAPSHOT` Provider 实现、同步的
@@ -121,7 +121,7 @@ go run ./cmd/tannang verify $package
 输出路径本身必须尚不存在。采集命令只读取指定的内嵌 fixture，创建 synthetic
 Evidence Package，并拒绝不安全路径或覆盖已有证据包。
 
-## 受保护的 Windows 进程快照 baseline 候选
+## 受保护的 Windows 进程快照 baseline
 
 在 Windows 上，普通 `collect --output` 会运行不可删减的受保护 baseline；该 baseline
 目前只包含 `PROCESS_IDENTITY_SNAPSHOT`，`--case-id` 仍为可选。既有
@@ -142,8 +142,8 @@ go run ./cmd/tannang verify $package
 go run ./cmd/tannang collect --process-identity-snapshot --output $package
 ```
 
-该受保护 baseline 激活仍是 pre-alpha implementation candidate，不代表 production
-ready 或整个 M4 已完成。
+该已激活的受保护 baseline 已集成到 `dev`。它完成的是刻意保持窄范围的 M4 Minimum
+Useful Baseline，而不是全面能力、production ready、main 集成或 release 声明。
 
 ## 证据包
 
@@ -203,7 +203,7 @@ forensic_certification: none
 judicial_validation: none
 ```
 
-普通 CLI 激活候选会在任何附加 Capability 之前运行固定 FirstStage 的受保护 baseline；
+普通 CLI 激活会在任何附加 Capability 之前运行固定 FirstStage 的受保护 baseline；
 该 baseline 当前只包含已评审的 `PROCESS_IDENTITY_SNAPSHOT` 范围，且不能通过 CLI 选项
 删除。`--synthetic` 继续作为显式非真实 fixture 路径。当前版本不包含 External Backend
 集成、Packet Capture，也不支持 Legacy/Heritage Windows runtime。
@@ -214,16 +214,23 @@ Synthetic fixture 中的 `LEGACY` 与 `HERITAGE` 只是测试输入，不代表�
 
 当前 synthetic `execution.Result.Payload` 只是 fixture 兼容机制，并不是未来真实
 Provider 的制品传输合同。进程快照 Provider 仅定义同步的 caller-owned `io.Writer` 交接
-来传递 serialized observations；有界的 FirstStage 候选只为这个 Capability 负责 path
+来传递 serialized observations；有界的 FirstStage 实现只为这个 Capability 负责 path
 选择、close/flush、retain/discard、Hash 与发布。当前没有通用多 Capability 证据包适配器，
 writer 输出本身也不等于 Evidence Package 或已发布的 artifact reference。
 
 ## 路线图
 
-下一 Gate 是对该 protected-baseline CLI 激活候选执行独立语义复核，并且只有复核没有
-blocker 时才执行一次有界真实 Windows baseline acceptance。本变更不选择第二个真实
-Capability，也不声称整个 M4 Minimum Useful Baseline 已完成。当前路径基线不声称抵抗
-高权限进程并发替换 filesystem namespace；本 Pre-alpha 仓库仍不具备生产就绪性。
+M4 Minimum Useful Baseline 已在 `dev` 上通过现有受保护的
+`PROCESS_IDENTITY_SNAPSHOT` 完成。它刻意以一个真实 Capability 收口；额外真实
+Capability 属于未来增量扩展，并非完成 M4 的前提。
+
+下一产品阶段是 M5 MVP RC。其有界重点是将已经可工作的
+`HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI` 产品化，用于可移植、offline-first
+执行和 operator-facing workflow，建立受支持 Windows 矩阵证据，并在 MVP scope 要求时
+提供 thin native one-click GUI。TUI 保持 HOLD。这些是路线图目标，并非已经实现的声明。
+
+当前路径基线不声称抵抗高权限进程并发替换 filesystem namespace；本 Pre-alpha 仓库仍
+不具备生产就绪性。
 
 ## 第三方边界
 
@@ -250,9 +257,9 @@ third_party_binary_executed_by_default: false
 
 探囊使用 Mozilla Public License 2.0，详见 [LICENSE](LICENSE)。
 
-## FirstStage protected-baseline 激活候选
+## 已激活的 FirstStage protected baseline
 
-已评审的候选实现新增窄范围的 `PROCESS_IDENTITY_SNAPSHOT` FirstStage 库路径，固定
+已集成的实现提供窄范围的 `PROCESS_IDENTITY_SNAPSHOT` FirstStage 库路径，固定
 绑定 Windows Tool Help Provider，并使用受 PATHSAFE 保护的 staging、Receipt 与 SHA-256
-Manifest 验证。普通 CLI 激活候选将该 Capability 作为唯一不可删减的 protected baseline；
+Manifest 验证。普通 CLI 激活将该 Capability 作为唯一不可删减的 protected baseline；
 显式真实 flag 保持兼容，显式 synthetic 路径保持隔离。production-ready 仍为 false。

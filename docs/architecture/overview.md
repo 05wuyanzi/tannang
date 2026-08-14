@@ -1,7 +1,7 @@
 # Genesis architecture
 
 Tannang is a Windows-first, platform-extensible evidence orchestration project.
-The normal CLI collection candidate activates the existing fixed real
+Normal CLI collection activates the existing fixed real
 FirstStage with one non-removable protected baseline capability:
 `PROCESS_IDENTITY_SNAPSHOT`. The explicit synthetic path remains separate and
 continues to prove the generic control path with embedded data:
@@ -128,9 +128,12 @@ writer seam itself is not package authority.
 The implementation supplies a private, fake-only test seam and a fixed
 production constructor for the single process-identity capability. Its package
 session owns one guarded staging tree, one optional derived NDJSON artifact,
-receipts, manifest verification, and no-overwrite publication. The activation
-candidate makes that capability the normal CLI's sole protected baseline;
+receipts, manifest verification, and no-overwrite publication. The integrated
+activation makes that capability the normal CLI's sole protected baseline;
 `--synthetic` bypasses the real factory, while the explicit real flag confirms
 the same baseline without duplication. The CLI returns a bounded health summary
 rather than a serialized `RunResult` or Provider payload. This remains
-`PUBLIC_PRE_ALPHA`, is not production ready, and does not complete all of M4.
+`PUBLIC_PRE_ALPHA` and is not production ready. The intentionally narrow M4
+Minimum Useful Baseline is complete on `dev` with this one real capability;
+that is not a comprehensive capability, main integration, or release-completion
+claim.
