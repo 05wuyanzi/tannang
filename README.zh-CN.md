@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**状态：** Pre-alpha · CLI/Application 仅限 Synthetic · Not production ready
+**状态：** Pre-alpha · 显式 Windows 真实采集 CLI 候选 · Not production ready
 
 **简体中文** | [English](README.md)
 
@@ -13,7 +13,7 @@
 探囊是一个 Windows-first 工程项目，用于描述采集意图、评估 Provider
 兼容性、记录执行结果，并将证据与可审计的完整性元数据一起封装。
 
-默认 CLI 和 Application 路径仍仅限 synthetic：它们只使用内嵌 fixture，不执行
+默认 CLI 采集模式仍仅限 synthetic：它只使用内嵌 fixture，不执行
 真实事件响应证据采集。仓库同时包含一个必须显式调用、范围受限的 Windows Target
 Fingerprint probe；它读取少量本机兼容性、资源、权限与输出卷事实，但不是证据采集，
 不会创建 Evidence Package，不是真实 Provider，不进行网络采集，也不代表这个
@@ -25,8 +25,10 @@ Provider 实现：`PROCESS_IDENTITY_SNAPSHOT`。它使用 Tool Help 进程快照
 只把进程 ID、父进程 ID 与可执行文件名以 NDJSON 写入调用方拥有的 writer。该 Provider
 实现及其独立 benign real-Windows acceptance 已通过评审。当前有界实现候选进一步增加
 固定的库级 FirstStage 构造函数、代码级 protected-baseline membership 与单 Capability
-Evidence Package 适配器；在独立实现复核和单独的真实 FirstStage 集成验收完成前，所有
-激活标志及 CLI 仍保持关闭。默认测试不会枚举主机进程。Target compatibility 仅限
+Evidence Package 适配器和一条显式 CLI 候选模式。它只能通过
+`--process-identity-snapshot` 选择，不暴露 Provider 选择或额外 Capability。该显式 CLI
+路径已完成独立复核与有界真实 Windows CLI acceptance。上述验证完成并不改变激活授权：
+所有激活标志仍保持 false。默认测试不会枚举主机进程。Target compatibility 仅限
 `amd64` 与 `x86`；Go build 验证使用 `windows/amd64` 和仅编译的 `windows/386`，
 后者不代表已完成 native x86 真实主机验收。
 
@@ -35,7 +37,7 @@ synthetic-only 且行为不变：它把可信的受保护 baseline 与附加请�
 获取一次不可变 Target Fingerprint，在单个 Run 内顺序解析并执行 synthetic Provider，
 完整记账所有请求，并协调有界、仅返回引用和结果的 Finalizer seam。专用进程快照构造
 函数是独立的固定候选路径，不能注入任意 Provider。同一 FirstStage 实例会拒绝而不是
-排队等待重叠 Run；不同实例彼此独立，两个路径均未接入 CLI。
+排队等待重叠 Run；不同实例彼此独立，固定真实路径仅由显式 CLI 模式进入。
 
 ## 为什么需要探囊
 
@@ -95,8 +97,8 @@ Evidence Package
 ```
 
 Provider 合同定义了 `WINDOWS_INBOX`、`FIRST_PARTY_NATIVE` 和
-`EXTERNAL_BACKEND`。一个有界的 `FIRST_PARTY_NATIVE` 进程快照 Provider 候选仅以
-显式库 API 形式存在；当前 CLI 与 FirstStage 可达的 Provider 类型仍只有
+`EXTERNAL_BACKEND`。一个有界的 `FIRST_PARTY_NATIVE` 进程快照 Provider 候选只可由
+显式 `collect --process-identity-snapshot` CLI 模式进入；`--synthetic` 仍只可到达
 `SYNTHETIC_TEST`。
 
 机器可读合同见 [`contracts/`](contracts/)，详细架构和安全边界见
@@ -104,7 +106,7 @@ Provider 合同定义了 `WINDOWS_INBOX`、`FIRST_PARTY_NATIVE` 和
 
 ## 快速开始
 
-**仅限 Synthetic。这些命令不会采集本机数据。**
+**Synthetic 采集。这些命令不会采集本机数据。**
 
 使用 Go 1.21 或更高版本，在仓库根目录运行：
 
@@ -118,6 +120,21 @@ go run ./cmd/tannang verify $package
 输出路径必须是允许的本地固定或可移动存储上的规范绝对路径，父目录必须存在，且
 输出路径本身必须尚不存在。采集命令只读取指定的内嵌 fixture，创建 synthetic
 Evidence Package，并拒绝不安全路径或覆盖已有证据包。
+
+## 显式 Windows 进程快照候选
+
+Windows 上唯一的真实 CLI 采集候选是对 `PROCESS_IDENTITY_SNAPSHOT` 的显式请求。它会
+创建包含 Receipt 与 Manifest 引用的新验证 Evidence Package，或诚实报告部分完成、跳过、
+阻止、失败或 finalization 结果；不会提供风险评分、恶意软件 verdict、自动修复、凭据采集
+或广泛 endpoint 枚举。
+
+```powershell
+$package = Join-Path (Get-Location) "tannang-process-snapshot"
+go run ./cmd/tannang collect --process-identity-snapshot --output $package --case-id CASE-01
+go run ./cmd/tannang verify $package
+```
+
+这仍是 pre-alpha implementation candidate，不代表 production ready。
 
 ## 证据包
 
@@ -177,9 +194,9 @@ forensic_certification: none
 judicial_validation: none
 ```
 
-当前 CLI 与产品已激活的 FirstStage/protected baseline 不执行真实 Windows 采集；已
-评审的进程快照 Provider 支持显式的 `PROCESS_IDENTITY_SNAPSHOT` 库采集范围。有界的
-FirstStage/Package 候选仍等待独立实现复核和真实集成验收，尚未激活。当前版本也不
+默认 CLI 与产品已激活的 FirstStage/protected baseline 不执行真实 Windows 采集；显式 CLI
+候选通过固定 FirstStage 路径支持已评审的 `PROCESS_IDENTITY_SNAPSHOT` 范围。其独立实现
+复核与有界真实 Windows CLI acceptance 已完成，但仍未激活，所有 activation flag 保持 false。当前版本也不
 包含 External Backend 集成、Packet Capture，且不支持 Legacy/Heritage Windows
 runtime。
 Synthetic fixture 中的 `LEGACY` 与 `HERITAGE` 只是测试输入，不代表支持声明。
@@ -229,5 +246,5 @@ third_party_binary_executed_by_default: false
 
 已评审的候选实现新增窄范围的 `PROCESS_IDENTITY_SNAPSHOT` FirstStage 库路径，固定
 绑定 Windows Tool Help Provider，并使用受 PATHSAFE 保护的 staging、Receipt、SHA-256
-Manifest 验证；CLI 仍未激活。该候选仍等待独立实现复核和真实集成验收，激活及生产就绪
-标志保持为 false。
+Manifest 验证和显式 CLI candidate mode。独立复核与有界真实 Windows CLI acceptance 已完成；
+激活及 production-ready 标志保持为 false。

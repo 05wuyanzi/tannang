@@ -1,9 +1,9 @@
 # Genesis security boundaries
 
-The pre-alpha CLI and existing generic Application path remain synthetic-only
-and are not approved for production or real evidence. A separate explicit
-library Provider implementation and its bounded FirstStage candidate do not
-change that default boundary or activate the product path.
+The default pre-alpha CLI mode and existing generic Application path remain
+synthetic-only and are not approved for production or real evidence. A separate
+explicit CLI candidate may invoke only the fixed process-snapshot FirstStage
+path; it does not change the default boundary or activate the product path.
 
 - Only simple embedded fixture names are accepted.
 - On Windows, output must be an explicit canonical absolute path on allowed
@@ -70,12 +70,14 @@ attempted-Provider fact and remains distinct from application orchestration
 cancellation.
 
 This seam gives the Provider no filesystem path, close/flush, hashing,
-publication, Receipt, Manifest, or package authority. It is not wired into the
-CLI, and ordinary tests use fake acquisition. The Provider implementation and
+publication, Receipt, Manifest, or package authority. It is reachable only
+through explicit `collect --process-identity-snapshot`; ordinary tests use fake
+acquisition. The Provider implementation and
 its separate benign Windows acceptance have passed review. The bounded
-FirstStage candidate adds code-level protected-baseline membership, but the
-activation claim remains false until its independent implementation review and
-separate opt-in real FirstStage acceptance pass.
+FirstStage candidate adds code-level protected-baseline membership. Its
+independent review and bounded real Windows CLI acceptance are complete, but
+those validation gates do not change activation authority and the activation
+claim remains false.
 
 The library-only FirstStage contract adds coordination around explicitly
 bounded collection. Existing `NewFirstStage` construction still admits only
@@ -98,14 +100,16 @@ synthetic Payload is not authority for real Provider artifact transport. The
 narrow process-snapshot writer seam stops at caller-owned candidate bytes and
 an execution Result; the bounded FirstStage session, not the Provider, owns the
 single-capability package lifecycle. There is no generic multi-capability
-adapter and no CLI wiring to FirstStage.
+adapter. The CLI candidate invokes only the fixed single-capability constructor
+and does not expose Provider, Resolver, backend, or supplemental selection.
 
 The bounded implementation candidate adds only the fixed process-identity
 package session and its unexported deterministic test seam. Providers still
 receive only an `io.Writer`; PATHSAFE owns exclusive creation, exact-file
 discard, and no-overwrite publication. The candidate claims only
-`PREEXISTING_REDIRECTION_SAFETY` and remains pending independent review and
-real integration acceptance.
+`PREEXISTING_REDIRECTION_SAFETY`. Its independent review and bounded real
+Windows CLI acceptance are complete, while the candidate remains PUBLIC_PRE_ALPHA
+and is not production ready.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It
