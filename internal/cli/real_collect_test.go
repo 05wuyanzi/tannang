@@ -136,10 +136,116 @@ func TestRealCollectFailsClosedWhenTerminalJSONWriteFails(t *testing.T) {
 	}
 }
 
-func TestHelpIncludesExplicitRealMode(t *testing.T) {
+func TestHelpIncludesActivatedBaselineAndExplicitCompatibility(t *testing.T) {
 	var stdout, stderr bytes.Buffer
-	if code := Run(context.Background(), []string{"help"}, &stdout, &stderr); code != ExitOK || !strings.Contains(stdout.String(), "--process-identity-snapshot") || strings.Contains(stdout.String(), "broad Windows support") {
+	if code := Run(context.Background(), []string{"help"}, &stdout, &stderr); code != ExitOK || !strings.Contains(stdout.String(), "collect --output") || !strings.Contains(stdout.String(), "--process-identity-snapshot") || !strings.Contains(stdout.String(), "--synthetic") || strings.Contains(stdout.String(), "broad Windows support") {
 		t.Fatalf("code=%d stdout=%s stderr=%s", code, stdout.String(), stderr.String())
+	}
+}
+
+func TestNormalCollectActivatesProtectedBaselineWithoutCaseID(t *testing.T) {
+	result := fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)
+	result.Context.CaseID = ""
+	stage := &fakeRealFirstStage{result: result}
+	factoryCalls := 0
+	restore := replaceRealFactory(func() (realFirstStage, error) {
+		factoryCalls++
+		return stage, nil
+	})
+	defer restore()
+
+	output := filepath.Join(t.TempDir(), "package")
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--output", output}, &stdout, &stderr)
+	if code != ExitOK || factoryCalls != 1 || stage.calls != 1 {
+		t.Fatalf("code=%d factory calls=%d stage calls=%d stderr=%s", code, factoryCalls, stage.calls, stderr.String())
+	}
+	if stage.request.CaseID != "" || stage.request.OutputDestination != output || len(stage.request.Supplemental) != 0 {
+		t.Fatalf("request=%+v", stage.request)
+	}
+	var summary realCollectSummary
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if summary.CaseID != "" || len(summary.Capabilities) != 1 || summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID || !summary.Capabilities[0].Protected {
+		t.Fatalf("summary=%+v", summary)
+	}
+}
+
+func TestNormalCollectAcceptsOptionalCaseID(t *testing.T) {
+	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
+	defer restore()
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--output", filepath.Join(t.TempDir(), "package"), "--case-id", "CASE-OPTIONAL"}, &stdout, &stderr)
+	if code != ExitOK || stage.calls != 1 || stage.request.CaseID != "CASE-OPTIONAL" || len(stage.request.Supplemental) != 0 {
+		t.Fatalf("code=%d calls=%d request=%+v stderr=%s", code, stage.calls, stage.request, stderr.String())
+	}
+}
+
+func TestExplicitProcessFlagConfirmsBaselineWithoutDuplication(t *testing.T) {
+	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+	factoryCalls := 0
+	restore := replaceRealFactory(func() (realFirstStage, error) {
+		factoryCalls++
+		return stage, nil
+	})
+	defer restore()
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--process-identity-snapshot", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitOK || factoryCalls != 1 || stage.calls != 1 {
+		t.Fatalf("code=%d factory calls=%d stage calls=%d stderr=%s", code, factoryCalls, stage.calls, stderr.String())
+	}
+	if len(stage.request.Supplemental) != 0 {
+		t.Fatalf("explicit flag added supplemental requests: %+v", stage.request.Supplemental)
+	}
+	var summary realCollectSummary
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil || len(summary.Capabilities) != 1 || summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID {
+		t.Fatalf("summary=%+v err=%v", summary, err)
+	}
+}
+
+func TestCollectDoesNotExposeProtectedBaselineOptOut(t *testing.T) {
+	factoryCalls := 0
+	restore := replaceRealFactory(func() (realFirstStage, error) {
+		factoryCalls++
+		return &fakeRealFirstStage{}, nil
+	})
+	defer restore()
+
+	for _, option := range []string{
+		"--no-process-identity-snapshot",
+		"--skip-baseline",
+		"--disable-baseline",
+		"--no-baseline",
+	} {
+		t.Run(option, func(t *testing.T) {
+			var stdout, stderr bytes.Buffer
+			code := Run(context.Background(), []string{"collect", option, "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+			if code != ExitUsage {
+				t.Fatalf("code=%d stderr=%s", code, stderr.String())
+			}
+		})
+	}
+	if factoryCalls != 0 {
+		t.Fatalf("factory calls=%d, want 0", factoryCalls)
+	}
+}
+
+func TestSyntheticCollectDoesNotConstructRealFirstStage(t *testing.T) {
+	factoryCalls := 0
+	restore := replaceRealFactory(func() (realFirstStage, error) {
+		factoryCalls++
+		return &fakeRealFirstStage{}, nil
+	})
+	defer restore()
+
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--synthetic", "available-collected", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitOK || factoryCalls != 0 {
+		t.Fatalf("code=%d factory calls=%d stderr=%s", code, factoryCalls, stderr.String())
 	}
 }
 
@@ -149,11 +255,15 @@ func TestRealCollectRejectsInvalidModesAndRequestsBeforeFactory(t *testing.T) {
 	defer restore()
 	output := filepath.Join(t.TempDir(), "package")
 	for name, args := range map[string][]string{
-		"missing mode":      {"collect", "--output", output},
-		"conflicting modes": {"collect", "--synthetic", "available-collected", "--process-identity-snapshot", "--output", output},
-		"missing output":    {"collect", "--process-identity-snapshot"},
-		"case on synthetic": {"collect", "--synthetic", "available-collected", "--case-id", "CASE-01", "--output", output},
-		"invalid case":      {"collect", "--process-identity-snapshot", "--case-id", "\x01", "--output", output},
+		"unexpected argument":              {"collect", "--output", output, "extra"},
+		"conflicting modes":                {"collect", "--synthetic", "available-collected", "--process-identity-snapshot", "--output", output},
+		"conflicting false real flag":      {"collect", "--synthetic", "available-collected", "--process-identity-snapshot=false", "--output", output},
+		"empty synthetic fixture":          {"collect", "--synthetic", "", "--output", output},
+		"missing output":                   {"collect", "--process-identity-snapshot"},
+		"case on synthetic":                {"collect", "--synthetic", "available-collected", "--case-id", "CASE-01", "--output", output},
+		"empty case flag on synthetic":     {"collect", "--synthetic", "available-collected", "--case-id", "", "--output", output},
+		"invalid case":                     {"collect", "--case-id", "\x01", "--output", output},
+		"explicit false baseline selector": {"collect", "--process-identity-snapshot=false", "--output", output},
 	} {
 		t.Run(name, func(t *testing.T) {
 			var stdout, stderr bytes.Buffer
@@ -194,15 +304,20 @@ func TestRealCollectFailsClosedBeforeAcquisition(t *testing.T) {
 			t.Fatalf("code=%d", code)
 		}
 	})
-	t.Run("relative output", func(t *testing.T) {
-		calls := 0
-		restore := replaceRealFactory(func() (realFirstStage, error) { calls++; return &fakeRealFirstStage{}, nil })
-		defer restore()
-		var stdout, stderr bytes.Buffer
-		if code := Run(context.Background(), []string{"collect", "--process-identity-snapshot", "--output", "relative-package"}, &stdout, &stderr); code != ExitPathSafety || calls != 0 {
-			t.Fatalf("code=%d calls=%d", code, calls)
-		}
-	})
+	for name, output := range map[string]string{
+		"relative output":  "relative-package",
+		"traversal output": filepath.Join("..", "package"),
+	} {
+		t.Run(name, func(t *testing.T) {
+			calls := 0
+			restore := replaceRealFactory(func() (realFirstStage, error) { calls++; return &fakeRealFirstStage{}, nil })
+			defer restore()
+			var stdout, stderr bytes.Buffer
+			if code := Run(context.Background(), []string{"collect", "--output", output}, &stdout, &stderr); code != ExitPathSafety || calls != 0 {
+				t.Fatalf("code=%d calls=%d", code, calls)
+			}
+		})
+	}
 }
 
 func fakeRealResult(state application.RunState, orchestration application.OrchestrationReason, compatibility execution.CompatibilityState, attempted bool, executionState execution.State, reason execution.Reason) application.RunResult {

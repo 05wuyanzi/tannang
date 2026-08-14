@@ -35,7 +35,7 @@ func TestWindowsRealCollectPathSafetyStopsBeforeFactory(t *testing.T) {
 			})
 			defer restore()
 			var stdout, stderr bytes.Buffer
-			code := Run(context.Background(), []string{"collect", "--process-identity-snapshot", "--output", test.output}, &stdout, &stderr)
+			code := Run(context.Background(), []string{"collect", "--output", test.output}, &stdout, &stderr)
 			if code != ExitPathSafety || calls != 0 {
 				t.Fatalf("code=%d calls=%d stderr=%s", code, calls, stderr.String())
 			}

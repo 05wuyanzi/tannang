@@ -2,7 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
-// Package cli implements the pre-alpha synthetic command surface.
+// Package cli implements the pre-alpha collection command surface.
 package cli
 
 import (
@@ -78,39 +78,54 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	if err := flags.Parse(args); err != nil {
 		return ExitUsage
 	}
-	if flags.NArg() != 0 || *output == "" || (*fixture == "" && !*realSnapshot) || (*fixture != "" && *realSnapshot) || (*caseID != "" && !*realSnapshot) {
-		fmt.Fprintln(stderr, "collect requires exactly one of --synthetic <fixture> or --process-identity-snapshot, plus --output <new-absolute-local-directory>; --case-id is real collection only")
+	fixtureSelected := false
+	realSnapshotSelected := false
+	caseIDSelected := false
+	flags.Visit(func(option *flag.Flag) {
+		switch option.Name {
+		case "synthetic":
+			fixtureSelected = true
+		case "process-identity-snapshot":
+			realSnapshotSelected = true
+		case "case-id":
+			caseIDSelected = true
+		}
+	})
+	if flags.NArg() != 0 || *output == "" ||
+		(fixtureSelected && (*fixture == "" || realSnapshotSelected || caseIDSelected)) ||
+		(realSnapshotSelected && !*realSnapshot) {
+		fmt.Fprintln(stderr, "collect requires --output; the protected process identity baseline is the default, --process-identity-snapshot confirms that baseline, and --synthetic cannot be combined with the real flag or --case-id")
 		return ExitUsage
 	}
-	if *realSnapshot {
-		return runRealCollect(ctx, *output, *caseID, stdout, stderr)
-	}
-	outcome, err := application.Collect(ctx, *fixture, *output)
-	if err != nil {
-		fmt.Fprintf(stderr, "collect failed: %v\n", err)
-		if pathsafe.IsSafetyError(err) {
-			return ExitPathSafety
+	if fixtureSelected {
+		outcome, err := application.Collect(ctx, *fixture, *output)
+		if err != nil {
+			fmt.Fprintf(stderr, "collect failed: %v\n", err)
+			if pathsafe.IsSafetyError(err) {
+				return ExitPathSafety
+			}
+			return ExitProviderError
 		}
-		return ExitProviderError
+		writeJSON(stdout, struct {
+			PackagePath   string                       `json:"package_path"`
+			Compatibility execution.CompatibilityState `json:"compatibility"`
+			Execution     execution.State              `json:"execution"`
+			Reason        execution.Reason             `json:"reason"`
+		}{outcome.PackagePath, outcome.Record.Compatibility, outcome.Record.Execution.State, outcome.Record.Reason})
+		switch outcome.Record.Execution.State {
+		case execution.Collected:
+			return ExitOK
+		case execution.Partial:
+			return ExitPartial
+		case execution.Skipped:
+			return ExitSkipped
+		case execution.Blocked:
+			return ExitBlocked
+		default:
+			return ExitProviderError
+		}
 	}
-	writeJSON(stdout, struct {
-		PackagePath   string                       `json:"package_path"`
-		Compatibility execution.CompatibilityState `json:"compatibility"`
-		Execution     execution.State              `json:"execution"`
-		Reason        execution.Reason             `json:"reason"`
-	}{outcome.PackagePath, outcome.Record.Compatibility, outcome.Record.Execution.State, outcome.Record.Reason})
-	switch outcome.Record.Execution.State {
-	case execution.Collected:
-		return ExitOK
-	case execution.Partial:
-		return ExitPartial
-	case execution.Skipped:
-		return ExitSkipped
-	case execution.Blocked:
-		return ExitBlocked
-	default:
-		return ExitProviderError
-	}
+	return runRealCollect(ctx, *output, *caseID, stdout, stderr)
 }
 
 type realCollectCapabilitySummary struct {
@@ -263,8 +278,9 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 
 func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "Tannang pre-alpha CLI")
-	fmt.Fprintln(writer, "  tannang collect --synthetic <fixture> --output <new-absolute-local-directory>")
+	fmt.Fprintln(writer, "  tannang collect --output <new-absolute-local-directory> [--case-id <case-id>]")
 	fmt.Fprintln(writer, "  tannang collect --process-identity-snapshot --output <new-absolute-local-directory> [--case-id <case-id>]")
+	fmt.Fprintln(writer, "  tannang collect --synthetic <fixture> --output <new-absolute-local-directory>")
 	fmt.Fprintln(writer, "  tannang verify <absolute-local-package-directory>")
 }
 
