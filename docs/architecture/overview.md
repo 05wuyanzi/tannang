@@ -1,12 +1,17 @@
 # Genesis architecture
 
 Tannang is a Windows-first, platform-extensible evidence orchestration project.
-The default CLI collection mode and existing generic Application collection
-path still prove only the control path below with embedded synthetic data:
+The normal CLI collection candidate activates the existing fixed real
+FirstStage with one non-removable protected baseline capability:
+`PROCESS_IDENTITY_SNAPSHOT`. The explicit synthetic path remains separate and
+continues to prove the generic control path with embedded data:
 
 ```text
-CLI -> Capability -> Target Fingerprint -> Resolver -> Synthetic Provider
+CLI --synthetic -> Capability -> Target Fingerprint -> Resolver -> Synthetic Provider
     -> Execution Result -> Receipt -> Evidence Package -> SHA-256 Verification
+
+CLI collect --output -> fixed PROCESS_IDENTITY_SNAPSHOT FirstStage
+    -> Tool Help Provider -> Receipt + artifact -> Evidence Package verification
 ```
 
 Capability and Provider are separate contracts. A user asks for evidence by
@@ -24,10 +29,10 @@ external backend invocation.
 
 ## Minimal real target fingerprint
 
-The `internal/fingerprint` package also exposes an explicit, read-only Windows
-target probe for future Compatibility Resolver and Provider Selection work. It
-is not wired into the CLI, Application collection path, a Provider, or Evidence
-Package creation. Calling it does not acquire incident-response evidence.
+The `internal/fingerprint` package exposes a bounded, read-only Windows target
+probe. The fixed real FirstStage invokes it once for compatibility context;
+there is no separate CLI probe or generic Provider-selection surface. Calling
+the probe is not itself incident-response evidence acquisition.
 
 The probe records only raw compatibility and resource context: actual Windows
 version/build, native and process architecture, logical processor count,
@@ -48,7 +53,7 @@ The v0.x Go module path is `github.com/05wuyanzi/tannang`.
 
 ## Narrow process identity Provider implementation
 
-The repository contains one explicitly invoked, library-only
+The repository contains one fixed, library-only
 `FIRST_PARTY_NATIVE` Provider implementation for
 `PROCESS_IDENTITY_SNAPSHOT/STATE_SNAPSHOT`. It uses
 `CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0)`, `Process32FirstW`, and
@@ -74,14 +79,11 @@ discard. Writer failure always returns `FAILED/PROVIDER_ERROR`, never
 
 Execution `CANCELLED` means an attempted Provider was explicitly cancelled.
 It is separate from application `OrchestrationReason=CANCELLED`, which also
-accounts for selected work that was never launched. The candidate is exposed
-only by the explicit `collect --process-identity-snapshot` CLI mode. The
-Provider implementation and its separate benign real-host
-acceptance have passed review. The bounded FirstStage implementation candidate
-now supplies a fixed constructor, code-level protected-baseline membership,
-and a single-capability package adapter. Independent review and bounded real
-Windows CLI acceptance are complete; those validation gates do not change
-product activation authority, and the activation claims remain false. Default
+accounts for selected work that was never launched. Normal `collect --output`
+and the compatible explicit `--process-identity-snapshot` form both use the same
+fixed constructor and code-level protected-baseline membership. The explicit
+flag adds no supplemental request, so the single-capability package adapter
+still executes and records `PROCESS_IDENTITY_SNAPSHOT` exactly once. Default
 tests use fake acquisition and do not enumerate host processes.
 
 ## First-stage orchestration contract
@@ -123,11 +125,12 @@ generic multi-capability package adapter. Existing synthetic Payload remains
 fixture compatibility only; the process-snapshot Provider's caller-owned
 writer seam itself is not package authority.
 
-The implementation candidate now supplies a private, fake-only test seam and a
-fixed production constructor for the single process-identity capability. Its
-package session owns one guarded staging tree, one optional derived NDJSON
-artifact, receipts, manifest verification, and no-overwrite publication.
-Independent review and bounded real Windows CLI acceptance are complete; this
-does not activate the product. The CLI candidate invokes only the fixed
-production constructor and returns a bounded health summary rather than a
-serialized `RunResult` or Provider payload.
+The implementation supplies a private, fake-only test seam and a fixed
+production constructor for the single process-identity capability. Its package
+session owns one guarded staging tree, one optional derived NDJSON artifact,
+receipts, manifest verification, and no-overwrite publication. The activation
+candidate makes that capability the normal CLI's sole protected baseline;
+`--synthetic` bypasses the real factory, while the explicit real flag confirms
+the same baseline without duplication. The CLI returns a bounded health summary
+rather than a serialized `RunResult` or Provider payload. This remains
+`PUBLIC_PRE_ALPHA`, is not production ready, and does not complete all of M4.

@@ -1,11 +1,13 @@
 # Genesis security boundaries
 
-The default pre-alpha CLI mode and existing generic Application path remain
-synthetic-only and are not approved for production or real evidence. A separate
-explicit CLI candidate may invoke only the fixed process-snapshot FirstStage
-path; it does not change the default boundary or activate the product path.
+The normal pre-alpha `collect --output` activation candidate invokes only the
+fixed process-snapshot FirstStage path. Its non-removable protected baseline
+contains exactly `PROCESS_IDENTITY_SNAPSHOT`. `--process-identity-snapshot`
+confirms the same baseline without adding a request, while `--synthetic` remains
+a separate fixture-only path and never constructs the real FirstStage. None of
+these paths is a production-readiness claim.
 
-- Only simple embedded fixture names are accepted.
+- Only simple embedded fixture names are accepted by `--synthetic`.
 - On Windows, output must be an explicit canonical absolute path on allowed
   local fixed or removable storage, with an existing safe parent chain.
 - UNC, mapped remote, device-namespace, ambiguous, and reparse-point paths are
@@ -16,7 +18,7 @@ path; it does not change the default boundary or activate the product path.
 - Verification rejects any reparse point in the package root, ancestor chain,
   or package tree before reading or hashing package content.
 - Active Trace is policy-disabled.
-- The explicitly invoked Target Fingerprint probe may read only bounded local
+- The fixed real FirstStage Target Fingerprint probe may read only bounded local
   compatibility and resource facts: Windows version/build, architecture, CPU
   count, physical memory, current-token elevation, and resource facts for an
   already PATHSAFE-accepted output location.
@@ -70,14 +72,11 @@ attempted-Provider fact and remains distinct from application orchestration
 cancellation.
 
 This seam gives the Provider no filesystem path, close/flush, hashing,
-publication, Receipt, Manifest, or package authority. It is reachable only
-through explicit `collect --process-identity-snapshot`; ordinary tests use fake
-acquisition. The Provider implementation and
-its separate benign Windows acceptance have passed review. The bounded
-FirstStage candidate adds code-level protected-baseline membership. Its
-independent review and bounded real Windows CLI acceptance are complete, but
-those validation gates do not change activation authority and the activation
-claim remains false.
+publication, Receipt, Manifest, or package authority. It is reachable through
+normal `collect --output` and the compatible explicit real flag; ordinary tests
+use fake acquisition. Both CLI forms merge to the same code-level protected
+baseline and cannot request duplicate acquisition. The Provider implementation
+and its separate benign Windows acceptance have passed review.
 
 The library-only FirstStage contract adds coordination around explicitly
 bounded collection. Existing `NewFirstStage` construction still admits only
@@ -100,16 +99,18 @@ synthetic Payload is not authority for real Provider artifact transport. The
 narrow process-snapshot writer seam stops at caller-owned candidate bytes and
 an execution Result; the bounded FirstStage session, not the Provider, owns the
 single-capability package lifecycle. There is no generic multi-capability
-adapter. The CLI candidate invokes only the fixed single-capability constructor
-and does not expose Provider, Resolver, backend, or supplemental selection.
+adapter. The CLI validates the request and output path before constructing the
+fixed real FirstStage, invokes only that single-capability constructor, and does
+not expose Provider, Resolver, backend, supplemental, or baseline-removal
+selection.
 
 The bounded implementation candidate adds only the fixed process-identity
 package session and its unexported deterministic test seam. Providers still
 receive only an `io.Writer`; PATHSAFE owns exclusive creation, exact-file
 discard, and no-overwrite publication. The candidate claims only
-`PREEXISTING_REDIRECTION_SAFETY`. Its independent review and bounded real
-Windows CLI acceptance are complete, while the candidate remains PUBLIC_PRE_ALPHA
-and is not production ready.
+`PREEXISTING_REDIRECTION_SAFETY`. The protected-baseline activation candidate
+remains `PUBLIC_PRE_ALPHA`, adds no second real capability, and is not
+production ready.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It
