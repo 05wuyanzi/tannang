@@ -121,6 +121,25 @@ go run ./cmd/tannang verify $package
 输出路径本身必须尚不存在。采集命令只读取指定的内嵌 fixture，创建 synthetic
 Evidence Package，并拒绝不安全路径或覆盖已有证据包。
 
+### 构建身份与便携式 headless 制品
+
+`tannang version` 返回一个有界 JSON 文档，其中包含基础产品版本、Go 构建元数据报告的
+源码 revision 与 modified 状态、Go 版本以及目标 OS/架构。该命令不执行采集，也不写入
+Evidence Package。
+
+本地 Windows amd64 helper 会把当前 checkout 构建到一个新的仓库外目录，目录内精确
+包含 `tannang.exe`、`BUILD-INFO.json`、`LICENSE` 与 `SHA256SUMS.txt`：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-windows-amd64.ps1 `
+  -OutputDirectory C:\absolute\new\tannang-portable -Mode Development
+```
+
+`Development` 模式允许 dirty checkout，并将其诚实记录为 modified。默认 `RC` 模式要求
+worktree clean 且 index 为空；built identity 为 unknown 或 modified 时会失败。这只是 M5
+build provenance 与 portable headless candidate，不代表 RC 已发布、Windows 支持矩阵已
+建立、GUI 已实现或已具备生产就绪性。thin native GUI 尚未实现。
+
 ## 受保护的 Windows 进程快照 baseline
 
 在 Windows 上，普通 `collect --output` 会运行不可删减的受保护 baseline；该 baseline
@@ -227,7 +246,8 @@ Capability 属于未来增量扩展，并非完成 M4 的前提。
 下一产品阶段是 M5 MVP RC。其有界重点是将已经可工作的
 `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI` 产品化，用于可移植、offline-first
 执行和 operator-facing workflow，建立受支持 Windows 矩阵证据，并在 MVP scope 要求时
-提供 thin native one-click GUI。TUI 保持 HOLD。这些是路线图目标，并非已经实现的声明。
+提供 thin native one-click GUI。当前 M5 candidate 只开始建立 headless build identity
+与 portable artifact 基础。TUI 保持 HOLD。这些是路线图目标，不代表 M5 已完成或 RC 已发布。
 
 当前路径基线不声称抵抗高权限进程并发替换 filesystem namespace；本 Pre-alpha 仓库仍
 不具备生产就绪性。

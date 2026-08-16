@@ -10,6 +10,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/05wuyanzi/tannang/internal/buildinfo"
 	"github.com/05wuyanzi/tannang/internal/capability"
 	"github.com/05wuyanzi/tannang/internal/execution"
 	"github.com/05wuyanzi/tannang/internal/fingerprint"
@@ -150,12 +151,7 @@ func TestPreAttemptPackageFailureReceiptRequiresExactEvidence(t *testing.T) {
 
 func TestFirstStagePackageMetadataValidation(t *testing.T) {
 	record := validFirstStageReceipt()
-	metadata := FirstStagePackageMetadata{
-		SchemaVersion: SchemaVersion, ManifestVersion: ManifestVersion, ProductVersion: ProductVersion, RuntimeArtifact: FirstStageRuntimeArtifact,
-		CollectionID: record.CollectionID, StartedAt: record.AcquisitionStartedAt, FinishedAt: record.AcquisitionFinishedAt, TargetFingerprint: record.TargetFingerprint, RunState: "COMPLETE",
-		ReceiptReferences: []string{FirstStageReceiptPath(capability.ProcessIdentitySnapshotID)}, ArtifactReferences: []ArtifactReference{*record.ArtifactReference},
-		DirectoryLayout: []string{"meta", "derived", "receipts", "hashes", "handoff"},
-	}
+	metadata := validFirstStagePackageMetadata(record)
 	if err := metadata.Validate(); err != nil {
 		t.Fatalf("valid metadata rejected: %v", err)
 	}
@@ -176,6 +172,41 @@ func TestFirstStagePackageMetadataValidation(t *testing.T) {
 	metadata.FinishedAt = "invalid"
 	if err := metadata.Validate(); err == nil {
 		t.Fatal("invalid package timestamp unexpectedly validated")
+	}
+}
+
+func TestFirstStageBuildProductVersionFormsRemainValid(t *testing.T) {
+	revision := strings.Repeat("a", 40)
+	versions := map[string]string{
+		"clean":    buildinfo.BaseVersion + "+git." + revision,
+		"modified": buildinfo.BaseVersion + "+git." + revision + ".modified",
+		"unknown":  buildinfo.BaseVersion + "+source.unknown",
+	}
+	for name, productVersion := range versions {
+		t.Run(name, func(t *testing.T) {
+			record := validFirstStageReceipt()
+			record.ProductVersion = productVersion
+			metadata := validFirstStagePackageMetadata(record)
+			metadata.ProductVersion = productVersion
+			if err := record.Validate(); err != nil {
+				t.Fatalf("receipt rejected product version %q: %v", productVersion, err)
+			}
+			if err := metadata.Validate(); err != nil {
+				t.Fatalf("metadata rejected product version %q: %v", productVersion, err)
+			}
+			if metadata.ProductVersion != record.ProductVersion {
+				t.Fatalf("metadata product version %q differs from receipt %q", metadata.ProductVersion, record.ProductVersion)
+			}
+		})
+	}
+}
+
+func validFirstStagePackageMetadata(record FirstStageRecord) FirstStagePackageMetadata {
+	return FirstStagePackageMetadata{
+		SchemaVersion: SchemaVersion, ManifestVersion: ManifestVersion, ProductVersion: ProductVersion, RuntimeArtifact: FirstStageRuntimeArtifact,
+		CollectionID: record.CollectionID, StartedAt: record.AcquisitionStartedAt, FinishedAt: record.AcquisitionFinishedAt, TargetFingerprint: record.TargetFingerprint, RunState: "COMPLETE",
+		ReceiptReferences: []string{FirstStageReceiptPath(capability.ProcessIdentitySnapshotID)}, ArtifactReferences: []ArtifactReference{*record.ArtifactReference},
+		DirectoryLayout: []string{"meta", "derived", "receipts", "hashes", "handoff"},
 	}
 }
 

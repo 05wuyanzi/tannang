@@ -12,6 +12,7 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/05wuyanzi/tannang/internal/buildinfo"
 	"github.com/05wuyanzi/tannang/internal/capability"
 	"github.com/05wuyanzi/tannang/internal/evidence"
 	"github.com/05wuyanzi/tannang/internal/execution"
@@ -129,6 +130,7 @@ func (s *FirstStage) finalizeReal(
 	if ctx == nil {
 		return FinalizationResult{}, errors.New("real finalization context is required")
 	}
+	productVersion := buildinfo.Current().ProductVersion
 	result.Records = cloneRecords(result.Records)
 	if result.Fingerprint != nil {
 		fingerprintCopy := result.Fingerprint.Clone()
@@ -207,7 +209,7 @@ func (s *FirstStage) finalizeReal(
 		firstStageReceipt := receipt.FirstStageRecord{
 			SchemaVersion:         receipt.SchemaVersion,
 			ManifestVersion:       receipt.ManifestVersion,
-			ProductVersion:        receipt.ProductVersion,
+			ProductVersion:        productVersion,
 			RuntimeArtifact:       receipt.FirstStageRuntimeArtifact,
 			CollectionID:          collection.CollectionID,
 			CaseID:                collection.CaseID,
@@ -252,7 +254,7 @@ func (s *FirstStage) finalizeReal(
 	metadata := receipt.FirstStagePackageMetadata{
 		SchemaVersion:       receipt.SchemaVersion,
 		ManifestVersion:     receipt.ManifestVersion,
-		ProductVersion:      receipt.ProductVersion,
+		ProductVersion:      productVersion,
 		RuntimeArtifact:     receipt.FirstStageRuntimeArtifact,
 		CollectionID:        collection.CollectionID,
 		CaseID:              collection.CaseID,

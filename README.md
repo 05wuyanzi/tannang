@@ -144,6 +144,28 @@ removable storage, its parent must exist, and the output itself must not exist.
 Collection reads the named embedded fixture, creates a synthetic Evidence
 Package, and refuses unsafe paths or overwrite.
 
+### Build identity and portable headless artifact
+
+`tannang version` returns one bounded JSON document containing the base product
+version, source revision and modified state reported by Go build metadata, Go
+version, and target OS/architecture. It performs no acquisition and writes no
+Evidence Package.
+
+The local Windows amd64 helper builds the current checkout into a new external
+directory containing exactly `tannang.exe`, `BUILD-INFO.json`, `LICENSE`, and
+`SHA256SUMS.txt`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-windows-amd64.ps1 `
+  -OutputDirectory C:\absolute\new\tannang-portable -Mode Development
+```
+
+`Development` mode permits a dirty checkout and records it as modified. The
+default `RC` mode requires a clean worktree and empty index, and fails if the
+built identity is unknown or modified. This is an M5 build-provenance and
+portable-headless candidate, not a released RC, supported Windows matrix, GUI,
+or production-readiness claim. A thin native GUI is not implemented yet.
+
 ## Protected Windows process snapshot baseline
 
 On Windows, normal `collect --output` runs the non-removable protected baseline,
@@ -263,8 +285,9 @@ The next product stage is M5 MVP RC. Its bounded focus is productizing the
 already-working `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI` for portable,
 offline-first execution and operator-facing workflow, establishing supported
 Windows matrix evidence, and, where required by MVP scope, the thin native
-one-click GUI. TUI remains HOLD. These are roadmap goals, not implemented
-claims.
+one-click GUI. The current M5 candidate begins only the headless build
+identity and portable artifact foundation. TUI remains HOLD. These are roadmap
+goals, not M5-complete or released-RC claims.
 
 The current path baseline does not claim resistance to privileged concurrent
 namespace races, and this pre-alpha repository remains non-production.

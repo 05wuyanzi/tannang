@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/05wuyanzi/tannang/internal/application"
+	"github.com/05wuyanzi/tannang/internal/buildinfo"
 	"github.com/05wuyanzi/tannang/internal/evidence"
 	"github.com/05wuyanzi/tannang/internal/execution"
 	"github.com/05wuyanzi/tannang/internal/integrity"
@@ -58,6 +59,8 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		return runCollect(ctx, args[1:], stdout, stderr)
 	case "verify":
 		return runVerify(args[1:], stdout, stderr)
+	case "version":
+		return runVersion(args[1:], stdout, stderr)
 	case "help", "-h", "--help":
 		printUsage(stdout)
 		return ExitOK
@@ -66,6 +69,18 @@ func Run(ctx context.Context, args []string, stdout, stderr io.Writer) int {
 		printUsage(stderr)
 		return ExitUsage
 	}
+}
+
+func runVersion(args []string, stdout, stderr io.Writer) int {
+	if len(args) != 0 {
+		fmt.Fprintln(stderr, "version does not accept arguments")
+		return ExitUsage
+	}
+	if err := writeJSON(stdout, buildinfo.Current()); err != nil {
+		fmt.Fprintln(stderr, "failed to write command result")
+		return exitTerminalOutput
+	}
+	return ExitOK
 }
 
 func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) int {
@@ -282,6 +297,7 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  tannang collect --process-identity-snapshot --output <new-absolute-local-directory> [--case-id <case-id>]")
 	fmt.Fprintln(writer, "  tannang collect --synthetic <fixture> --output <new-absolute-local-directory>")
 	fmt.Fprintln(writer, "  tannang verify <absolute-local-package-directory>")
+	fmt.Fprintln(writer, "  tannang version")
 }
 
 func writeJSON(writer io.Writer, value any) error {
