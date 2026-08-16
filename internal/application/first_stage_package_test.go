@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/05wuyanzi/tannang/internal/buildinfo"
 	"github.com/05wuyanzi/tannang/internal/capability"
 	"github.com/05wuyanzi/tannang/internal/execution"
 	"github.com/05wuyanzi/tannang/internal/fingerprint"
@@ -164,6 +165,15 @@ func TestRealFirstStageSelectedLifecycleUsesOneSession(t *testing.T) {
 	}
 	if session.metadata.StartedAt == "" || session.metadata.FinishedAt == "" || session.receipts[0].AcquisitionStartedAt != session.metadata.StartedAt || session.receipts[0].AcquisitionFinishedAt != session.metadata.FinishedAt {
 		t.Fatalf("package and receipt timestamps are inconsistent: metadata=%+v receipt=%+v", session.metadata, session.receipts[0])
+	}
+	productVersion := buildinfo.Current().ProductVersion
+	if session.metadata.ProductVersion != productVersion {
+		t.Fatalf("metadata product version = %q, want %q", session.metadata.ProductVersion, productVersion)
+	}
+	for index, record := range session.receipts {
+		if record.ProductVersion != session.metadata.ProductVersion {
+			t.Fatalf("receipt %d product version = %q, metadata = %q", index, record.ProductVersion, session.metadata.ProductVersion)
+		}
 	}
 }
 

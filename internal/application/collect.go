@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/05wuyanzi/tannang/internal/buildinfo"
 	"github.com/05wuyanzi/tannang/internal/evidence"
 	"github.com/05wuyanzi/tannang/internal/execution"
 	"github.com/05wuyanzi/tannang/internal/provider"
@@ -79,7 +80,7 @@ func Collect(ctx context.Context, fixtureName, output string) (Outcome, error) {
 	record := receipt.Record{
 		SchemaVersion:        receipt.SchemaVersion,
 		ManifestVersion:      receipt.ManifestVersion,
-		ProductVersion:       receipt.ProductVersion,
+		ProductVersion:       buildinfo.Current().ProductVersion,
 		RuntimeArtifact:      receipt.RuntimeArtifact,
 		RuntimeLane:          fixture.Target.RuntimeLane,
 		FixtureName:          fixture.Name,

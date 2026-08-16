@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/05wuyanzi/tannang/internal/buildinfo"
 	"github.com/05wuyanzi/tannang/internal/capability"
 	"github.com/05wuyanzi/tannang/internal/execution"
 	"github.com/05wuyanzi/tannang/internal/fingerprint"
@@ -20,7 +21,7 @@ import (
 const (
 	SchemaVersion   = "1.0"
 	ManifestVersion = "1.0"
-	ProductVersion  = "0.0.0-pre-alpha"
+	ProductVersion  = buildinfo.BaseVersion
 	RuntimeArtifact = "tannang-genesis-synthetic"
 )
 
