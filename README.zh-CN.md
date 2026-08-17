@@ -140,6 +140,14 @@ worktree clean 且 index 为空；built identity 为 unknown 或 modified 时会
 build provenance 与 portable headless candidate，不代表 RC 已发布、Windows 支持矩阵已
 建立、GUI 已实现或已具备生产就绪性。thin native GUI 尚未实现。
 
+首条脱敏 Windows amd64 evidence 已记录在
+[`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md)。revision
+`1d581a801c5546e7dd86cc9f41cfdc9051eb93a3` 已在主机报告的精确 Microsoft Windows 11
+专业工作站版 25H2 环境上完成验证：version `10.0.26200`、build `26200.8894`、amd64。
+本次进程处于 elevated 状态，因此 non-elevated 执行及其他所有 Windows 环境仍为
+untested。这一单行结果只是 initial evidence，不是广义 Windows support 声明；原始
+Evidence Package 与完整日志不公开。
+
 ## 受保护的 Windows 进程快照 baseline
 
 在 Windows 上，普通 `collect --output` 会运行不可删减的受保护 baseline；该 baseline
@@ -208,7 +216,7 @@ reports/
 ## 当前限制
 
 ```yaml
-supported_windows_matrix: not_yet_established
+supported_windows_matrix: initial_evidence_available
 real_windows_provider: true
 real_collection: true
 real_collection_scope: PROCESS_IDENTITY_SNAPSHOT

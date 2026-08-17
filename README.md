@@ -166,6 +166,15 @@ built identity is unknown or modified. This is an M5 build-provenance and
 portable-headless candidate, not a released RC, supported Windows matrix, GUI,
 or production-readiness claim. A thin native GUI is not implemented yet.
 
+Initial sanitized Windows amd64 evidence is recorded in
+[`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md). Revision
+`1d581a801c5546e7dd86cc9f41cfdc9051eb93a3` was validated on the exact
+host-reported Microsoft Windows 11 Pro for Workstations 25H2 environment,
+version `10.0.26200`, build `26200.8894`, amd64. The observed process was
+elevated, so non-elevated execution and every other Windows environment remain
+untested. This single row is initial evidence, not a general Windows support
+claim; its raw Evidence Package and complete logs are not public.
+
 ## Protected Windows process snapshot baseline
 
 On Windows, normal `collect --output` runs the non-removable protected baseline,
@@ -239,7 +248,7 @@ and [Windows path safety v0](docs/architecture/windows-path-safety.md).
 ## Current limitations
 
 ```yaml
-supported_windows_matrix: not_yet_established
+supported_windows_matrix: initial_evidence_available
 real_windows_provider: true
 real_collection: true
 real_collection_scope: PROCESS_IDENTITY_SNAPSHOT
