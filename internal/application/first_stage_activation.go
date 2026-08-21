@@ -31,10 +31,17 @@ type processIdentitySnapshotFirstStageDeps struct {
 	PackageFactory   firstStagePackageFactory
 	Clock            func() time.Time
 	CollectionID     func() (string, error)
+	RuntimeSink      RuntimeEventSink
 }
 
 // NewProcessIdentitySnapshotFirstStage installs the fixed production binding.
 func NewProcessIdentitySnapshotFirstStage(finalizationTimeout time.Duration) (*FirstStage, error) {
+	return NewProcessIdentitySnapshotFirstStageWithRuntimeSink(finalizationTimeout, nil)
+}
+
+// NewProcessIdentitySnapshotFirstStageWithRuntimeSink installs the fixed
+// production binding with optional non-authoritative runtime observations.
+func NewProcessIdentitySnapshotFirstStageWithRuntimeSink(finalizationTimeout time.Duration, sink RuntimeEventSink) (*FirstStage, error) {
 	if finalizationTimeout <= 0 {
 		return nil, errors.New("finalization timeout must be positive")
 	}
@@ -46,6 +53,7 @@ func NewProcessIdentitySnapshotFirstStage(finalizationTimeout time.Duration) (*F
 		PackageFactory: defaultFirstStagePackageFactory,
 		Clock:          time.Now,
 		CollectionID:   NewCollectionID,
+		RuntimeSink:    sink,
 	})
 }
 
@@ -97,6 +105,7 @@ func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Durat
 		streamingRunner:        deps.StreamingRunner,
 		streamingDescriptor:    cloneDescriptor(descriptor),
 		packageFactory:         deps.PackageFactory,
+		runtimeSink:            deps.RuntimeSink,
 	}, nil
 }
 

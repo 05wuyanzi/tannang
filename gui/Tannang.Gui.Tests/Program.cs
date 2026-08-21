@@ -4,6 +4,8 @@
 
 using System.Text.Json;
 using System.Diagnostics;
+using System.Reflection;
+using System.Text;
 using Tannang.Gui;
 
 return TestRunner.Run();
@@ -37,7 +39,38 @@ internal static class TestRunner
             ("ArgumentList preserves output spaces", OutputArgumentPreservesSpaces),
             ("ArgumentList preserves case ID quotes", CaseIdArgumentPreservesQuotes),
             ("CLI resolution is sibling-only", SiblingResolutionIsStrict),
-            ("duplicate start is rejected", DuplicateStartIsRejected)
+            ("duplicate start is rejected", DuplicateStartIsRejected),
+            ("GUI child arguments opt in to runtime status", RuntimeStatusArgumentIsIncluded),
+            ("valid runtime status parses", ValidRuntimeStatusParses),
+            ("runtime status accepts unique extensions", RuntimeStatusAcceptsUniqueExtensions),
+            ("duplicate runtime property is rejected", DuplicateRuntimePropertyIsRejected),
+            ("nested duplicate runtime property is rejected", NestedDuplicateRuntimePropertyIsRejected),
+            ("unknown runtime pair is rejected", UnknownRuntimePairIsRejected),
+            ("invalid runtime pair is rejected", InvalidRuntimePairIsRejected),
+            ("bad runtime timestamp is rejected", BadRuntimeTimestampIsRejected),
+            ("trailing runtime JSON is rejected", TrailingRuntimeJsonIsRejected),
+            ("oversized runtime record is rejected", OversizedRuntimeRecordIsRejected),
+            ("heartbeat and activity are tracked separately", HeartbeatAndActivityAreTrackedSeparately),
+            ("quiet runtime state is responsive", QuietRuntimeStateIsResponsive),
+            ("missing runtime signal degrades", MissingRuntimeSignalDegrades),
+            ("missing runtime signal becomes uncertain", MissingRuntimeSignalBecomesUncertain),
+            ("runtime signal recovers", RuntimeSignalRecovers),
+            ("fresh heartbeat and activity are active", FreshHeartbeatAndActivityAreActive),
+            ("fresh heartbeat with quiet activity is responsive", FreshHeartbeatWithQuietActivityIsResponsive),
+            ("activity cannot mask stale heartbeat", ActivityCannotMaskStaleHeartbeat),
+            ("activity cannot mask uncertain heartbeat", ActivityCannotMaskUncertainHeartbeat),
+            ("activity without heartbeat degrades", ActivityWithoutHeartbeatDegrades),
+            ("activity without heartbeat becomes uncertain", ActivityWithoutHeartbeatBecomesUncertain),
+            ("heartbeat recovery with activity is active", HeartbeatRecoveryWithActivityIsActive),
+            ("heartbeat recovery with quiet activity is responsive", HeartbeatRecoveryWithQuietActivityIsResponsive),
+            ("process lifecycle states do not regress", ProcessLifecycleStatesDoNotRegress),
+            ("runtime state labels preserve frozen names", RuntimeStateLabelsPreserveFrozenNames),
+            ("runtime terminal event is not final authority", RuntimeTerminalEventIsNotFinalAuthority),
+            ("malformed runtime warning is fixed", MalformedRuntimeWarningIsFixed),
+            ("stderr runtime routing hides malformed raw input", StderrRuntimeRoutingHidesMalformedRawInput),
+            ("live log enforces line bound and marker", LiveLogEnforcesLineBoundAndMarker),
+            ("live log enforces byte bound", LiveLogEnforcesByteBound),
+            ("follow tail pauses and resumes", FollowTailPausesAndResumes)
         };
 
         int failures = 0;
@@ -249,6 +282,322 @@ internal static class TestRunner
         guard.Exit();
         AssertTrue(guard.TryEnter());
         guard.Exit();
+    }
+
+    private static void RuntimeStatusArgumentIsIncluded()
+    {
+        using TemporaryDirectory directory = new();
+        File.WriteAllBytes(Path.Combine(directory.Path, "tannang.exe"), Array.Empty<byte>());
+        ProcessStartInfo info = CliRunner.BuildStartInfoForBaseDirectory(directory.Path, @"C:\output", "CASE-01");
+        AssertEqual(CliRunner.RuntimeStatusArgument, info.ArgumentList[^1]);
+        AssertEqual(1, info.ArgumentList.Count(value => value == CliRunner.RuntimeStatusArgument));
+    }
+
+    private static void ValidRuntimeStatusParses()
+    {
+        RuntimeStatus status = RuntimeStatusParser.Parse(RuntimeLine("PHASE", "FINGERPRINT"));
+        AssertEqual("PHASE", status.Type);
+        AssertEqual("FINGERPRINT", status.Event);
+        AssertEqual("Preparing target fingerprint", status.OperatorText);
+        AssertEqual(TimeSpan.Zero, status.At.Offset);
+        RuntimeStatus nanosecond = RuntimeStatusParser.Parse(
+            RuntimeStatus.Prefix + "{\"type\":\"HEARTBEAT\",\"event\":\"PULSE\",\"at\":\"2026-08-21T01:02:03.123456789Z\"}");
+        AssertTrue(nanosecond.IsHeartbeat);
+    }
+
+    private static void RuntimeStatusAcceptsUniqueExtensions()
+    {
+        RuntimeStatus status = RuntimeStatusParser.Parse(
+            RuntimeStatus.Prefix + "{\"type\":\"HEARTBEAT\",\"event\":\"PULSE\",\"at\":\"2026-08-21T01:02:03Z\",\"extension\":{\"value\":1}}");
+        AssertTrue(status.IsHeartbeat);
+    }
+
+    private static void DuplicateRuntimePropertyIsRejected()
+    {
+        AssertRuntimeParserFails(
+            RuntimeStatus.Prefix + "{\"type\":\"PHASE\",\"type\":\"HEARTBEAT\",\"event\":\"PULSE\",\"at\":\"2026-08-21T01:02:03Z\"}");
+    }
+
+    private static void NestedDuplicateRuntimePropertyIsRejected()
+    {
+        AssertRuntimeParserFails(
+            RuntimeStatus.Prefix + "{\"type\":\"PHASE\",\"event\":\"FINGERPRINT\",\"at\":\"2026-08-21T01:02:03Z\",\"extension\":{\"x\":1,\"x\":2}}");
+    }
+
+    private static void UnknownRuntimePairIsRejected()
+    {
+        AssertRuntimeParserFails(RuntimeLine("UNKNOWN", "PULSE"));
+        AssertRuntimeParserFails(RuntimeLine("HEARTBEAT", "UNKNOWN"));
+    }
+
+    private static void InvalidRuntimePairIsRejected()
+    {
+        AssertRuntimeParserFails(RuntimeLine("PHASE", "PULSE"));
+    }
+
+    private static void BadRuntimeTimestampIsRejected()
+    {
+        AssertRuntimeParserFails(RuntimeStatus.Prefix + "{\"type\":\"PHASE\",\"event\":\"FINGERPRINT\",\"at\":\"2026-08-21T01:02:03+00:00\"}");
+        AssertRuntimeParserFails(RuntimeStatus.Prefix + "{\"type\":\"PHASE\",\"event\":\"FINGERPRINT\",\"at\":\"2026-08-21 01:02:03Z\"}");
+        AssertRuntimeParserFails(RuntimeStatus.Prefix + "{\"type\":\"PHASE\",\"event\":\"FINGERPRINT\",\"at\":\"not-a-time\"}");
+    }
+
+    private static void TrailingRuntimeJsonIsRejected()
+    {
+        AssertRuntimeParserFails(RuntimeLine("PHASE", "FINGERPRINT") + " {}");
+    }
+
+    private static void OversizedRuntimeRecordIsRejected()
+    {
+        string line = RuntimeStatus.Prefix + "{\"type\":\"PHASE\",\"event\":\"FINGERPRINT\",\"at\":\"2026-08-21T01:02:03Z\",\"extension\":\"" + new string('x', 600) + "\"}";
+        AssertRuntimeParserFails(line);
+    }
+
+    private static void HeartbeatAndActivityAreTrackedSeparately()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("START", "RUN_STARTED"), TimeSpan.FromSeconds(1));
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.FromSeconds(5));
+        AssertEqual(TimeSpan.FromSeconds(5), tracker.LastHeartbeat);
+        AssertEqual(TimeSpan.FromSeconds(1), tracker.LastOperationalActivity);
+        AssertEqual("Collector started", tracker.LatestOperationalActivity);
+    }
+
+    private static void QuietRuntimeStateIsResponsive()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("START", "RUN_STARTED"), TimeSpan.Zero);
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.FromSeconds(15));
+        AssertEqual(GuiRuntimeState.QuietButResponsive, tracker.GetState(TimeSpan.FromSeconds(15)));
+    }
+
+    private static void MissingRuntimeSignalDegrades()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        AssertEqual(GuiRuntimeState.Starting, tracker.GetState(TimeSpan.FromSeconds(14)));
+        AssertEqual(GuiRuntimeState.SignalDegraded, tracker.GetState(TimeSpan.FromSeconds(15)));
+    }
+
+    private static void MissingRuntimeSignalBecomesUncertain()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        AssertEqual(GuiRuntimeState.LivenessUncertain, tracker.GetState(TimeSpan.FromSeconds(30)));
+    }
+
+    private static void RuntimeSignalRecovers()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("START", "RUN_STARTED"), TimeSpan.Zero);
+        AssertEqual(GuiRuntimeState.SignalDegraded, tracker.GetState(TimeSpan.FromSeconds(20)));
+        tracker.ObserveMalformed();
+        AssertEqual(GuiRuntimeState.SignalDegraded, tracker.GetState(TimeSpan.FromSeconds(20)));
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.FromSeconds(21));
+        tracker.Observe(Runtime("PHASE", "COLLECTION"), TimeSpan.FromSeconds(21));
+        AssertEqual(GuiRuntimeState.Active, tracker.GetState(TimeSpan.FromSeconds(21)));
+    }
+
+    private static void FreshHeartbeatAndActivityAreActive()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.FromSeconds(5));
+        tracker.Observe(Runtime("PHASE", "COLLECTION"), TimeSpan.FromSeconds(6));
+        AssertEqual(GuiRuntimeState.Active, tracker.GetState(TimeSpan.FromSeconds(7)));
+    }
+
+    private static void FreshHeartbeatWithQuietActivityIsResponsive()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("PHASE", "COLLECTION"), TimeSpan.Zero);
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.FromSeconds(5));
+        AssertEqual(GuiRuntimeState.QuietButResponsive, tracker.GetState(TimeSpan.FromSeconds(19)));
+    }
+
+    private static void ActivityCannotMaskStaleHeartbeat()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.Zero);
+        tracker.Observe(Runtime("PHASE", "COLLECTION"), TimeSpan.FromSeconds(16));
+        AssertEqual(GuiRuntimeState.SignalDegraded, tracker.GetState(TimeSpan.FromSeconds(16)));
+    }
+
+    private static void ActivityCannotMaskUncertainHeartbeat()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.Zero);
+        tracker.Observe(Runtime("ACTIVITY", "PROVIDER_STARTED"), TimeSpan.FromSeconds(31));
+        AssertEqual(GuiRuntimeState.LivenessUncertain, tracker.GetState(TimeSpan.FromSeconds(31)));
+    }
+
+    private static void ActivityWithoutHeartbeatDegrades()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("PHASE", "COLLECTION"), TimeSpan.FromSeconds(10));
+        AssertEqual(GuiRuntimeState.SignalDegraded, tracker.GetState(TimeSpan.FromSeconds(15)));
+    }
+
+    private static void ActivityWithoutHeartbeatBecomesUncertain()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("ACTIVITY", "PROVIDER_STARTED"), TimeSpan.FromSeconds(29));
+        AssertEqual(GuiRuntimeState.LivenessUncertain, tracker.GetState(TimeSpan.FromSeconds(30)));
+    }
+
+    private static void HeartbeatRecoveryWithActivityIsActive()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.Zero);
+        tracker.Observe(Runtime("PHASE", "COLLECTION"), TimeSpan.FromSeconds(16));
+        AssertEqual(GuiRuntimeState.SignalDegraded, tracker.GetState(TimeSpan.FromSeconds(16)));
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.FromSeconds(17));
+        tracker.Observe(Runtime("ACTIVITY", "PROVIDER_FINISHED"), TimeSpan.FromSeconds(18));
+        AssertEqual(GuiRuntimeState.Active, tracker.GetState(TimeSpan.FromSeconds(18)));
+    }
+
+    private static void HeartbeatRecoveryWithQuietActivityIsResponsive()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.Zero);
+        tracker.Observe(Runtime("PHASE", "COLLECTION"), TimeSpan.Zero);
+        AssertEqual(GuiRuntimeState.SignalDegraded, tracker.GetState(TimeSpan.FromSeconds(16)));
+        tracker.Observe(Runtime("HEARTBEAT", "PULSE"), TimeSpan.FromSeconds(17));
+        AssertEqual(GuiRuntimeState.QuietButResponsive, tracker.GetState(TimeSpan.FromSeconds(20)));
+    }
+
+    private static void ProcessLifecycleStatesDoNotRegress()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.ProcessExited();
+        AssertEqual(GuiRuntimeState.ProcessExited, tracker.GetState(TimeSpan.Zero));
+        tracker.VerifyingResult();
+        tracker.ProcessExited();
+        AssertEqual(GuiRuntimeState.VerifyingResult, tracker.GetState(TimeSpan.Zero));
+        tracker.Finish();
+        tracker.ProcessExited();
+        tracker.VerifyingResult();
+        AssertEqual(GuiRuntimeState.Finished, tracker.GetState(TimeSpan.Zero));
+    }
+
+    private static void RuntimeTerminalEventIsNotFinalAuthority()
+    {
+        var tracker = new RuntimeLivenessTracker();
+        tracker.Start(TimeSpan.Zero);
+        tracker.Observe(Runtime("TERMINAL", "RUN_RETURNED"), TimeSpan.FromSeconds(1));
+        AssertEqual(GuiRuntimeState.Active, tracker.GetState(TimeSpan.FromSeconds(1)));
+        AssertTrue(tracker.GetState(TimeSpan.FromSeconds(1)) != GuiRuntimeState.Finished);
+    }
+
+    private static void RuntimeStateLabelsPreserveFrozenNames()
+    {
+        AssertEqual("QUIET_BUT_RESPONSIVE", RuntimeLivenessTracker.FormatState(GuiRuntimeState.QuietButResponsive));
+        AssertEqual("SIGNAL_DEGRADED", RuntimeLivenessTracker.FormatState(GuiRuntimeState.SignalDegraded));
+        AssertEqual("LIVENESS_UNCERTAIN", RuntimeLivenessTracker.FormatState(GuiRuntimeState.LivenessUncertain));
+        AssertEqual("PROCESS_EXITED", RuntimeLivenessTracker.FormatState(GuiRuntimeState.ProcessExited));
+        AssertEqual("VERIFYING_RESULT", RuntimeLivenessTracker.FormatState(GuiRuntimeState.VerifyingResult));
+    }
+
+    private static void MalformedRuntimeWarningIsFixed()
+    {
+        AssertEqual("Runtime status signal was malformed and was ignored.", CliRunner.MalformedRuntimeWarning);
+        AssertTrue(!CliRunner.MalformedRuntimeWarning.Contains("raw-secret", StringComparison.Ordinal));
+    }
+
+    private static void StderrRuntimeRoutingHidesMalformedRawInput()
+    {
+        const string secret = "RAW-SECRET-MUST-NOT-ECHO";
+        string input = RuntimeLine("PHASE", "FINGERPRINT") + "\n" +
+            RuntimeStatus.Prefix + "{not-json-" + secret + "}\n" +
+            "ordinary bounded diagnostic\n";
+        using var stream = new MemoryStream(Encoding.UTF8.GetBytes(input));
+        using var reader = new StreamReader(stream, Encoding.UTF8);
+        MethodInfo method = typeof(CliRunner).GetMethod("ReadStandardErrorAsync", BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Runtime stderr router was not found.");
+        int valid = 0;
+        int malformed = 0;
+        var validCallback = new Action<RuntimeStatus>(_ =>
+        {
+            valid++;
+            throw new InvalidOperationException("observer failure must be isolated");
+        });
+        var malformedCallback = new Action(() => malformed++);
+        var task = (Task<string>)(method.Invoke(null, new object?[] { reader, validCallback, malformedCallback })
+            ?? throw new InvalidOperationException("Runtime stderr router returned no task."));
+        string diagnostics = task.GetAwaiter().GetResult();
+        AssertEqual(1, valid);
+        AssertEqual(1, malformed);
+        AssertEqual("ordinary bounded diagnostic", diagnostics);
+        AssertTrue(!diagnostics.Contains(secret, StringComparison.Ordinal));
+    }
+
+    private static void LiveLogEnforcesLineBoundAndMarker()
+    {
+        var buffer = new LiveLogBuffer();
+        for (int index = 0; index <= LiveLogBuffer.MaxLines; index++)
+        {
+            buffer.Append($"line-{index}");
+        }
+        AssertEqual(LiveLogBuffer.MaxLines, buffer.Lines.Count);
+        AssertTrue(buffer.Lines.Contains(LiveLogBuffer.TrimMarker));
+        AssertTrue(!buffer.Lines.Contains("line-0"));
+    }
+
+    private static void LiveLogEnforcesByteBound()
+    {
+        var buffer = new LiveLogBuffer();
+        for (int index = 0; index < 100; index++)
+        {
+            buffer.Append(new string('x', 4096));
+        }
+        AssertTrue(buffer.FormattedBytes <= LiveLogBuffer.MaxFormattedBytes);
+        AssertTrue(buffer.Lines.Contains(LiveLogBuffer.TrimMarker));
+    }
+
+    private static void FollowTailPausesAndResumes()
+    {
+        var follow = new LiveLogFollowState();
+        AssertTrue(follow.FollowTail);
+        follow.OnMessageAppended();
+        AssertTrue(!follow.HasNewMessages);
+        follow.Pause();
+        follow.OnMessageAppended();
+        AssertTrue(!follow.FollowTail && follow.HasNewMessages);
+        follow.Resume();
+        AssertTrue(follow.FollowTail && !follow.HasNewMessages);
+    }
+
+    private static RuntimeStatus Runtime(string type, string eventName)
+    {
+        return new RuntimeStatus(type, eventName, DateTimeOffset.Parse("2026-08-21T01:02:03Z"));
+    }
+
+    private static string RuntimeLine(string type, string eventName)
+    {
+        return RuntimeStatus.Prefix + $"{{\"type\":\"{type}\",\"event\":\"{eventName}\",\"at\":\"2026-08-21T01:02:03Z\"}}";
+    }
+
+    private static void AssertRuntimeParserFails(string line)
+    {
+        try
+        {
+            _ = RuntimeStatusParser.Parse(line);
+            throw new InvalidOperationException("Expected runtime status parsing to fail.");
+        }
+        catch (RuntimeStatusException)
+        {
+        }
     }
 
     private static CliProcessResult ProcessResult(int exitCode, string stdout)

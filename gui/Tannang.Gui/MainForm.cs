@@ -2,6 +2,7 @@
 // License, v. 2.0. If a copy of the MPL was not distributed with this
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+using System.Diagnostics;
 using System.Globalization;
 using System.Windows.Forms;
 
@@ -13,18 +14,27 @@ public sealed class MainForm : Form
     private readonly Button _browseButton = new();
     private readonly TextBox _caseId = new();
     private readonly Button _startButton = new();
-    private readonly Label _stateLabel = new();
+    private readonly Label _collectorStateLabel = new();
+    private readonly Label _livenessLabel = new();
+    private readonly Label _latestActivityLabel = new();
+    private readonly Label _elapsedLabel = new();
     private readonly Label _summaryLabel = new();
     private readonly TextBox _packagePath = new();
+    private readonly LiveLogView _liveLog = new();
     private readonly CliRunner _cliRunner = new();
     private readonly RunStateGuard _runState = new();
+    private readonly RuntimeLivenessTracker _liveness = new();
+    private readonly Stopwatch _runClock = new();
+    private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 1000 };
 
     public MainForm()
     {
         Text = "Tannang Collection";
-        MinimumSize = new Size(620, 330);
+        ClientSize = new Size(920, 640);
+        MinimumSize = new Size(820, 560);
         StartPosition = FormStartPosition.CenterScreen;
         AutoScaleMode = AutoScaleMode.Font;
+        _uiTimer.Tick += (_, _) => UpdateRuntimeLabels();
 
         BuildControls();
         SetIdleState();
@@ -48,56 +58,98 @@ public sealed class MainForm : Form
         {
             Dock = DockStyle.Fill,
             Padding = new Padding(12),
-            ColumnCount = 3,
-            RowCount = 5,
+            ColumnCount = 1,
+            RowCount = 4,
             AutoSize = false
         };
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 48));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));
+
+        layout.Controls.Add(BuildInputZone(), 0, 0);
+        layout.Controls.Add(BuildStatusZone(), 0, 1);
+        layout.Controls.Add(_liveLog, 0, 2);
+        layout.Controls.Add(BuildTerminalZone(), 0, 3);
+        Controls.Add(layout);
+    }
+
+    private Control BuildInputZone()
+    {
+        var input = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 2, Padding = new Padding(0, 0, 0, 8) };
+        input.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        input.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        input.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 96));
+        input.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        input.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
         _outputPath.Dock = DockStyle.Fill;
         _outputPath.AccessibleName = "Evidence Package output path";
         _browseButton.Text = "Browse...";
         _browseButton.AutoSize = true;
         _browseButton.Click += BrowseButton_Click;
-        AddRow(layout, "Output destination", _outputPath, _browseButton, 0);
+        AddRow(input, "Output destination", _outputPath, _browseButton, 0);
 
         _caseId.Dock = DockStyle.Fill;
         _caseId.AccessibleName = "Optional case ID";
-        AddRow(layout, "Case ID (optional)", _caseId, new Panel(), 1);
-
         _startButton.Text = "Start";
         _startButton.AutoSize = true;
         _startButton.Click += StartButton_Click;
-        _stateLabel.Dock = DockStyle.Fill;
-        _stateLabel.TextAlign = ContentAlignment.MiddleLeft;
-        _stateLabel.AccessibleName = "Current collection state";
-        AddRow(layout, "State", _stateLabel, _startButton, 2);
+        AddRow(input, "Case ID (optional)", _caseId, _startButton, 1);
+        return input;
+    }
+
+    private Control BuildStatusZone()
+    {
+        var status = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 4, RowCount = 2, Padding = new Padding(0, 0, 0, 8) };
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 36));
+        status.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 32));
+        status.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        status.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+
+        _collectorStateLabel.Dock = DockStyle.Fill;
+        _collectorStateLabel.AccessibleName = "Collector process state";
+        _livenessLabel.Dock = DockStyle.Fill;
+        _livenessLabel.AccessibleName = "Collector liveness state";
+        _latestActivityLabel.Dock = DockStyle.Fill;
+        _latestActivityLabel.AutoEllipsis = true;
+        _latestActivityLabel.AccessibleName = "Latest operational activity";
+        _elapsedLabel.Dock = DockStyle.Fill;
+        _elapsedLabel.AccessibleName = "Collection elapsed time";
+        status.Controls.Add(new Label { Text = "Collector", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        status.Controls.Add(_collectorStateLabel, 1, 0);
+        status.Controls.Add(new Label { Text = "Liveness", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 2, 0);
+        status.Controls.Add(_livenessLabel, 3, 0);
+        status.Controls.Add(new Label { Text = "Latest activity", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 1);
+        status.Controls.Add(_latestActivityLabel, 1, 1);
+        status.Controls.Add(new Label { Text = "Elapsed", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 2, 1);
+        status.Controls.Add(_elapsedLabel, 3, 1);
+        return status;
+    }
+
+    private Control BuildTerminalZone()
+    {
+        var terminal = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
+        terminal.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
+        terminal.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        terminal.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        terminal.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
 
         _summaryLabel.Dock = DockStyle.Fill;
-        _summaryLabel.TextAlign = ContentAlignment.MiddleLeft;
         _summaryLabel.AutoEllipsis = true;
         _summaryLabel.AccessibleName = "Final result summary";
-        layout.Controls.Add(new Label { Text = "Result", TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, 3);
-        layout.Controls.Add(_summaryLabel, 1, 3);
-        layout.SetColumnSpan(_summaryLabel, 2);
+        terminal.Controls.Add(new Label { Text = "Final result", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
+        terminal.Controls.Add(_summaryLabel, 1, 0);
 
         _packagePath.Dock = DockStyle.Fill;
         _packagePath.ReadOnly = true;
         _packagePath.TabStop = false;
         _packagePath.AccessibleName = "Verified Evidence Package location";
-        layout.Controls.Add(new Label { Text = "Evidence Package", TextAlign = ContentAlignment.MiddleLeft, Dock = DockStyle.Fill }, 0, 4);
-        layout.Controls.Add(_packagePath, 1, 4);
-        layout.SetColumnSpan(_packagePath, 2);
-
-        Controls.Add(layout);
+        terminal.Controls.Add(new Label { Text = "Evidence Package", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 1);
+        terminal.Controls.Add(_packagePath, 1, 1);
+        return terminal;
     }
 
     private static void AddRow(TableLayoutPanel layout, string labelText, Control editor, Control action, int row)
@@ -143,12 +195,23 @@ public sealed class MainForm : Form
         SetRunningState();
         try
         {
-            CliProcessResult processResult = await _cliRunner.RunAsync(output, caseId);
+            CliProcessResult processResult = await _cliRunner.RunAsync(
+                output,
+                caseId,
+                status => PostToUi(() => ObserveRuntime(status)),
+                () => PostToUi(ObserveMalformedRuntime),
+                () => PostToUi(ObserveProcessExited));
+            _liveness.ProcessExited();
+            UpdateRuntimeLabels();
+            _liveness.VerifyingResult();
+            UpdateRuntimeLabels();
             MappedResult result = ResultMapper.Map(processResult);
+            _liveness.Finish();
             SetFinishedState(result);
         }
         catch (Exception exception)
         {
+            _liveness.Finish();
             SetFinishedState(new MappedResult
             {
                 State = GuiResultState.Failed,
@@ -158,6 +221,8 @@ public sealed class MainForm : Form
         }
         finally
         {
+            _uiTimer.Stop();
+            _runClock.Stop();
             _runState.Exit();
             _outputPath.Enabled = true;
             _caseId.Enabled = true;
@@ -168,28 +233,92 @@ public sealed class MainForm : Form
 
     private void SetIdleState()
     {
-        _stateLabel.Text = "IDLE";
+        _collectorStateLabel.Text = "IDLE";
+        _livenessLabel.Text = "STARTING";
+        _latestActivityLabel.Text = "No activity yet.";
+        _elapsedLabel.Text = "00:00:00";
         _summaryLabel.Text = "Ready to collect.";
         _packagePath.Text = string.Empty;
     }
 
     private void SetRunningState()
     {
-        _stateLabel.Text = "RUNNING";
+        _liveness.Start();
+        _liveLog.ClearLog();
+        _runClock.Restart();
+        _uiTimer.Start();
+        _collectorStateLabel.Text = "RUNNING";
         _summaryLabel.Text = "Collection is running...";
         _packagePath.Text = string.Empty;
         _outputPath.Enabled = false;
         _caseId.Enabled = false;
         _browseButton.Enabled = false;
         _startButton.Enabled = false;
+        UpdateRuntimeLabels();
+    }
+
+    private void ObserveRuntime(RuntimeStatus status)
+    {
+        if (!_runState.IsRunning)
+        {
+            return;
+        }
+        _liveness.Observe(status, _runClock.Elapsed);
+        _liveLog.AppendRuntime(status);
+        UpdateRuntimeLabels();
+    }
+
+    private void ObserveMalformedRuntime()
+    {
+        if (!_runState.IsRunning)
+        {
+            return;
+        }
+        _liveness.ObserveMalformed();
+        _liveLog.AppendLocalWarning(CliRunner.MalformedRuntimeWarning);
+        UpdateRuntimeLabels();
+    }
+
+    private void ObserveProcessExited()
+    {
+        if (!_runState.IsRunning)
+        {
+            return;
+        }
+        _liveness.ProcessExited();
+        UpdateRuntimeLabels();
+    }
+
+    private void UpdateRuntimeLabels()
+    {
+        GuiRuntimeState state = _liveness.GetState(_runClock.Elapsed);
+        _livenessLabel.Text = RuntimeLivenessTracker.FormatState(state);
+        _elapsedLabel.Text = _runClock.Elapsed.ToString(@"hh\:mm\:ss");
+        _latestActivityLabel.Text = _liveness.LatestOperationalActivity ?? "No activity yet.";
     }
 
     private void SetFinishedState(MappedResult result)
     {
-        _stateLabel.Text = $"FINISHED: {result.State.ToString().ToUpperInvariant()}";
+        _collectorStateLabel.Text = $"FINISHED: {result.State.ToString().ToUpperInvariant()}";
         _summaryLabel.Text = string.IsNullOrEmpty(result.FailureDetail)
             ? result.Summary
             : $"{result.Summary} {result.FailureDetail}";
         _packagePath.Text = result.PackageReference ?? string.Empty;
+        UpdateRuntimeLabels();
+    }
+
+    private void PostToUi(Action action)
+    {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+        try
+        {
+            BeginInvoke(action);
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 }

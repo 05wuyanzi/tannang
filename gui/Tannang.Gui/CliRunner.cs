@@ -3,6 +3,7 @@
 // file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
 using System.Diagnostics;
+using System.Text;
 
 namespace Tannang.Gui;
 
@@ -26,6 +27,10 @@ public sealed class CliProcessResult
 
 public sealed class CliRunner
 {
+    public const string RuntimeStatusArgument = "--runtime-status-stderr";
+    public const string MalformedRuntimeWarning = "Runtime status signal was malformed and was ignored.";
+    private const int MaxDiagnosticCharacters = 16 * 1024;
+
     public static string ResolveCliPath(string baseDirectory)
     {
         string path = Path.Combine(baseDirectory, "tannang.exe");
@@ -67,11 +72,17 @@ public sealed class CliRunner
             startInfo.ArgumentList.Add("--case-id");
             startInfo.ArgumentList.Add(caseId);
         }
+        startInfo.ArgumentList.Add(RuntimeStatusArgument);
 
         return startInfo;
     }
 
-    public async Task<CliProcessResult> RunAsync(string output, string? caseId)
+    public async Task<CliProcessResult> RunAsync(
+        string output,
+        string? caseId,
+        Action<RuntimeStatus>? onRuntimeStatus = null,
+        Action? onMalformedRuntimeStatus = null,
+        Action? onProcessExited = null)
     {
         ProcessStartInfo startInfo;
         try
@@ -92,8 +103,16 @@ public sealed class CliRunner
             }
 
             Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
-            Task<string> stderrTask = process.StandardError.ReadToEndAsync();
+            Task<string> stderrTask = ReadStandardErrorAsync(process.StandardError, onRuntimeStatus, onMalformedRuntimeStatus);
             await process.WaitForExitAsync().ConfigureAwait(true);
+            try
+            {
+                onProcessExited?.Invoke();
+            }
+            catch
+            {
+                // Runtime UI observation cannot affect collection result handling.
+            }
             string stdout = await stdoutTask.ConfigureAwait(true);
             string stderr = await stderrTask.ConfigureAwait(true);
             return new CliProcessResult(true, process.ExitCode, stdout, stderr);
@@ -101,6 +120,67 @@ public sealed class CliRunner
         catch (Exception exception) when (exception is InvalidOperationException or IOException or System.ComponentModel.Win32Exception)
         {
             return new CliProcessResult(false, null, string.Empty, string.Empty, BoundedDetail(exception.Message));
+        }
+    }
+
+    private static async Task<string> ReadStandardErrorAsync(
+        StreamReader reader,
+        Action<RuntimeStatus>? onRuntimeStatus,
+        Action? onMalformedRuntimeStatus)
+    {
+        var diagnostics = new StringBuilder();
+        string? line;
+        while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) is not null)
+        {
+            if (line.StartsWith(RuntimeStatus.Prefix, StringComparison.Ordinal))
+            {
+                try
+                {
+                    RuntimeStatus status = RuntimeStatusParser.Parse(line);
+                    try
+                    {
+                        onRuntimeStatus?.Invoke(status);
+                    }
+                    catch
+                    {
+                        // Runtime UI observation cannot affect collection result handling.
+                    }
+                }
+                catch (RuntimeStatusException)
+                {
+                    try
+                    {
+                        onMalformedRuntimeStatus?.Invoke();
+                    }
+                    catch
+                    {
+                        // Runtime UI observation cannot affect collection result handling.
+                    }
+                }
+                continue;
+            }
+
+            AppendBoundedDiagnostic(diagnostics, line);
+        }
+        return diagnostics.ToString();
+    }
+
+    private static void AppendBoundedDiagnostic(StringBuilder diagnostics, string line)
+    {
+        const string separator = "\n";
+        int remaining = MaxDiagnosticCharacters - diagnostics.Length;
+        if (remaining <= 0)
+        {
+            return;
+        }
+        if (diagnostics.Length > 0)
+        {
+            diagnostics.Append(separator);
+            remaining--;
+        }
+        if (remaining > 0)
+        {
+            diagnostics.Append(line.AsSpan(0, Math.Min(line.Length, remaining)));
         }
     }
 

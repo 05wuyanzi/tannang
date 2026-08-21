@@ -167,6 +167,7 @@ type FirstStage struct {
 	streamingRunner        provider.StreamingRunner
 	streamingDescriptor    provider.Descriptor
 	packageFactory         firstStagePackageFactory
+	runtimeSink            RuntimeEventSink
 }
 
 // NewFirstStage validates and freezes trusted orchestration configuration.
@@ -257,6 +258,16 @@ func NewFirstStage(config FirstStageConfig) (*FirstStage, error) {
 	}, nil
 }
 
+func (s *FirstStage) emitRuntime(event RuntimeEvent) {
+	if s == nil || s.runtimeSink == nil || event.Validate() != nil {
+		return
+	}
+	defer func() {
+		_ = recover()
+	}()
+	_ = s.runtimeSink.TryEmit(event)
+}
+
 // NewCollectionID returns a cryptographically random, canonical COL-prefixed
 // UUIDv4 using only the standard library.
 func NewCollectionID() (string, error) {
@@ -305,6 +316,8 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 
 	requests := mergeRequests(s.baseline, request.Supplemental)
 	result := RunResult{Context: collection, Records: s.skeletonRecords(requests)}
+	s.emitRuntime(RuntimeEvent{Type: RuntimeTypeStart, Event: RuntimeEventRunStarted})
+	defer s.emitRuntime(RuntimeEvent{Type: RuntimeTypeTerminal, Event: RuntimeEventRunReturned})
 	if ctx.Err() != nil {
 		return s.failBeforeExecution(result, OrchestrationCancelled, ctx.Err()), nil
 	}
@@ -326,6 +339,7 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 	if ctx.Err() != nil {
 		return s.failBeforeExecution(result, OrchestrationCancelled, ctx.Err()), nil
 	}
+	s.emitRuntime(RuntimeEvent{Type: RuntimeTypePhase, Event: RuntimeEventFingerprint})
 	target, err := s.fingerprintProbe(ctx, collection.OutputDestination)
 	if err != nil {
 		if ctx.Err() != nil || errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
@@ -362,6 +376,7 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 			continue
 		}
 
+		s.emitRuntime(RuntimeEvent{Type: RuntimeTypePhase, Event: RuntimeEventResolution})
 		decision, resolveErr := s.resolve(
 			*record.Capability,
 			target.Clone(),
@@ -403,6 +418,7 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 			continue
 		}
 		if s.realMode {
+			s.emitRuntime(RuntimeEvent{Type: RuntimeTypePhase, Event: RuntimeEventCollection})
 			if err := s.runRealSelected(ctx, collection, target, record, &realSession, &cancelled); err != nil {
 				if packageFailureErr == nil {
 					packageFailureErr = err
@@ -420,8 +436,11 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 			continue
 		}
 
+		s.emitRuntime(RuntimeEvent{Type: RuntimeTypePhase, Event: RuntimeEventCollection})
 		record.Attempted = true
+		s.emitRuntime(RuntimeEvent{Type: RuntimeTypeActivity, Event: RuntimeEventProviderStarted})
 		executionResult := runner.Execute(ctx, *record.Capability, target.Clone())
+		s.emitRuntime(RuntimeEvent{Type: RuntimeTypeActivity, Event: RuntimeEventProviderFinished})
 		if validationErr := executionResult.Validate(); validationErr != nil {
 			executionResult = execution.Result{
 				State:             execution.Failed,
@@ -445,6 +464,7 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 		return s.failFinalization(result, packageFailureErr), nil
 	}
 
+	s.emitRuntime(RuntimeEvent{Type: RuntimeTypeFinalizing, Event: RuntimeEventStarted})
 	finalizeContext, cancel := context.WithTimeout(context.WithoutCancel(ctx), s.finalizationTimeout)
 	defer cancel()
 	var finalization FinalizationResult
@@ -462,6 +482,7 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 	if finalizeErr != nil {
 		return s.failFinalization(result, finalizeErr), nil
 	}
+	s.emitRuntime(RuntimeEvent{Type: RuntimeTypeVerifying, Event: RuntimeEventStarted})
 	if err := validateFinalization(finalization, result.Records); err != nil {
 		return s.failFinalization(result, err), nil
 	}

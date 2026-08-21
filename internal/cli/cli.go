@@ -29,11 +29,16 @@ type realFirstStage interface {
 }
 
 type realFirstStageFactory func() (realFirstStage, error)
+type realFirstStageRuntimeFactory func(application.RuntimeEventSink) (realFirstStage, error)
 
 // newRealFirstStage is package-private so CLI tests can exercise terminal
 // accounting without invoking the accepted Windows Provider.
 var newRealFirstStage realFirstStageFactory = func() (realFirstStage, error) {
 	return application.NewProcessIdentitySnapshotFirstStage(realFirstStageFinalizationTimeout)
+}
+
+var newRealFirstStageWithRuntimeSink realFirstStageRuntimeFactory = func(sink application.RuntimeEventSink) (realFirstStage, error) {
+	return application.NewProcessIdentitySnapshotFirstStageWithRuntimeSink(realFirstStageFinalizationTimeout, sink)
 }
 
 const (
@@ -90,12 +95,14 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	realSnapshot := flags.Bool("process-identity-snapshot", false, "collect the fixed Windows process identity snapshot")
 	output := flags.String("output", "", "new absolute local evidence package directory")
 	caseID := flags.String("case-id", "", "optional case identifier for real collection")
+	runtimeStatus := flags.Bool("runtime-status-stderr", false, "emit bounded runtime status records to stderr")
 	if err := flags.Parse(args); err != nil {
 		return ExitUsage
 	}
 	fixtureSelected := false
 	realSnapshotSelected := false
 	caseIDSelected := false
+	runtimeStatusSelected := false
 	flags.Visit(func(option *flag.Flag) {
 		switch option.Name {
 		case "synthetic":
@@ -104,12 +111,14 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			realSnapshotSelected = true
 		case "case-id":
 			caseIDSelected = true
+		case "runtime-status-stderr":
+			runtimeStatusSelected = true
 		}
 	})
 	if flags.NArg() != 0 || *output == "" ||
-		(fixtureSelected && (*fixture == "" || realSnapshotSelected || caseIDSelected)) ||
-		(realSnapshotSelected && !*realSnapshot) {
-		fmt.Fprintln(stderr, "collect requires --output; the protected process identity baseline is the default, --process-identity-snapshot confirms that baseline, and --synthetic cannot be combined with the real flag or --case-id")
+		(fixtureSelected && (*fixture == "" || realSnapshotSelected || caseIDSelected || runtimeStatusSelected)) ||
+		(realSnapshotSelected && !*realSnapshot) || (runtimeStatusSelected && !*runtimeStatus) {
+		fmt.Fprintln(stderr, "collect requires --output; the protected process identity baseline is the default, --process-identity-snapshot confirms that baseline, and --synthetic cannot be combined with real-only flags")
 		return ExitUsage
 	}
 	if fixtureSelected {
@@ -140,7 +149,7 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			return ExitProviderError
 		}
 	}
-	return runRealCollect(ctx, *output, *caseID, stdout, stderr)
+	return runRealCollect(ctx, *output, *caseID, stdout, stderr, *runtimeStatus)
 }
 
 type realCollectCapabilitySummary struct {
@@ -165,36 +174,54 @@ type realCollectSummary struct {
 	Capabilities         []realCollectCapabilitySummary  `json:"capabilities"`
 }
 
-func runRealCollect(ctx context.Context, output, caseID string, stdout, stderr io.Writer) int {
+func runRealCollect(ctx context.Context, output, caseID string, stdout, stderr io.Writer, runtimeStatus bool) int {
+	diagnosticWriter := stderr
+	var arbiter *stderrArbiter
+	if runtimeStatus {
+		arbiter = newStderrArbiter(stderr)
+		diagnosticWriter = arbiter
+		defer arbiter.Stop()
+	}
 	request := application.RunRequest{CaseID: caseID, OutputDestination: output}
 	if err := request.Validate(); err != nil {
-		fmt.Fprintln(stderr, "invalid real collection request")
+		fmt.Fprintln(diagnosticWriter, "invalid real collection request")
 		return ExitUsage
 	}
 	if err := evidence.ValidateOutputPath(output); err != nil {
-		fmt.Fprintf(stderr, "collect failed: %v\n", err)
+		fmt.Fprintf(diagnosticWriter, "collect failed: %v\n", err)
 		return ExitPathSafety
 	}
-	if newRealFirstStage == nil {
-		fmt.Fprintln(stderr, "real collection could not start")
+	var reporter *runtimeReporter
+	if runtimeStatus {
+		reporter = newRuntimeReporter(arbiter, runtimeHeartbeat, time.Now)
+		defer reporter.Stop()
+	}
+	if (!runtimeStatus && newRealFirstStage == nil) || (runtimeStatus && newRealFirstStageWithRuntimeSink == nil) {
+		fmt.Fprintln(diagnosticWriter, "real collection could not start")
 		return ExitProviderError
 	}
-	stage, err := newRealFirstStage()
+	var stage realFirstStage
+	var err error
+	if runtimeStatus {
+		stage, err = newRealFirstStageWithRuntimeSink(reporter)
+	} else {
+		stage, err = newRealFirstStage()
+	}
 	if err != nil {
-		fmt.Fprintln(stderr, "real collection could not start")
+		fmt.Fprintln(diagnosticWriter, "real collection could not start")
 		return ExitProviderError
 	}
 	if isNilRealFirstStage(stage) {
-		fmt.Fprintln(stderr, "real collection could not start")
+		fmt.Fprintln(diagnosticWriter, "real collection could not start")
 		return ExitProviderError
 	}
 	result, err := stage.Run(ctx, request)
 	if err != nil {
-		fmt.Fprintln(stderr, "real collection failed")
+		fmt.Fprintln(diagnosticWriter, "real collection failed")
 		return ExitProviderError
 	}
 	if err := writeJSON(stdout, summarizeRealCollect(result)); err != nil {
-		fmt.Fprintln(stderr, "failed to write command result")
+		fmt.Fprintln(diagnosticWriter, "failed to write command result")
 		return exitTerminalOutput
 	}
 	return realCollectExitCode(result)
@@ -293,8 +320,8 @@ func runVerify(args []string, stdout, stderr io.Writer) int {
 
 func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "Tannang pre-alpha CLI")
-	fmt.Fprintln(writer, "  tannang collect --output <new-absolute-local-directory> [--case-id <case-id>]")
-	fmt.Fprintln(writer, "  tannang collect --process-identity-snapshot --output <new-absolute-local-directory> [--case-id <case-id>]")
+	fmt.Fprintln(writer, "  tannang collect --output <new-absolute-local-directory> [--case-id <case-id>] [--runtime-status-stderr]")
+	fmt.Fprintln(writer, "  tannang collect --process-identity-snapshot --output <new-absolute-local-directory> [--case-id <case-id>] [--runtime-status-stderr]")
 	fmt.Fprintln(writer, "  tannang collect --synthetic <fixture> --output <new-absolute-local-directory>")
 	fmt.Fprintln(writer, "  tannang verify <absolute-local-package-directory>")
 	fmt.Fprintln(writer, "  tannang version")
