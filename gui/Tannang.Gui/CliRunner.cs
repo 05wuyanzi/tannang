@@ -9,13 +9,28 @@ namespace Tannang.Gui;
 
 public sealed class CliProcessResult
 {
-    public CliProcessResult(bool started, int? exitCode, string stdout, string stderr, string? failureDetail = null)
+    public CliProcessResult(
+        bool started,
+        int? exitCode,
+        string stdout,
+        string stderr,
+        string? failureDetail = null,
+        CliExecutionDiagnostics? diagnostics = null)
     {
         Started = started;
         ExitCode = exitCode;
         Stdout = stdout;
         Stderr = stderr;
         FailureDetail = failureDetail;
+        Diagnostics = diagnostics ?? new CliExecutionDiagnostics
+        {
+            ProcessStarted = started,
+            ProcessStartFailureClass = started ? ProcessStartFailureClass.NONE : ProcessStartFailureClass.START_EXCEPTION,
+            ExitCode = exitCode,
+            StdoutPresent = !string.IsNullOrWhiteSpace(stdout),
+            StdoutLength = CliExecutionDiagnostics.CapStdoutLength(stdout.Length),
+            OrdinaryStderrBytesObserved = Math.Min(Encoding.UTF8.GetByteCount(stderr), CliExecutionDiagnostics.OrdinaryStderrBytesObservedCap)
+        };
     }
 
     public bool Started { get; }
@@ -23,13 +38,46 @@ public sealed class CliProcessResult
     public string Stdout { get; }
     public string Stderr { get; }
     public string? FailureDetail { get; }
+    public CliExecutionDiagnostics Diagnostics { get; }
 }
+
+internal delegate Task<CliProcessResult> ChildProcessExecution(
+    string output,
+    string? caseId,
+    Action<RuntimeStatus>? onRuntimeStatus,
+    Action? onMalformedRuntimeStatus,
+    Action? onProcessExited);
 
 public sealed class CliRunner
 {
     public const string RuntimeStatusArgument = "--runtime-status-stderr";
     public const string MalformedRuntimeWarning = "Runtime status signal was malformed and was ignored.";
     private const int MaxDiagnosticCharacters = 16 * 1024;
+    private readonly ChildProcessExecution _execution;
+
+    public CliRunner() : this(ExecuteDefaultProcessAsync)
+    {
+    }
+
+    internal CliRunner(ChildProcessExecution execution)
+    {
+        _execution = execution ?? throw new ArgumentNullException(nameof(execution));
+    }
+
+    internal CliRunner(string baseDirectory)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseDirectory);
+        _execution = (output, caseId, onRuntimeStatus, onMalformedRuntimeStatus, onProcessExited) =>
+            ExecuteProcessAsync(output, caseId, onRuntimeStatus, onMalformedRuntimeStatus, onProcessExited, baseDirectory, null);
+    }
+
+    internal CliRunner(string baseDirectory, Action<Process> afterStartForTest)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(baseDirectory);
+        ArgumentNullException.ThrowIfNull(afterStartForTest);
+        _execution = (output, caseId, onRuntimeStatus, onMalformedRuntimeStatus, onProcessExited) =>
+            ExecuteProcessAsync(output, caseId, onRuntimeStatus, onMalformedRuntimeStatus, onProcessExited, baseDirectory, afterStartForTest);
+    }
 
     public static string ResolveCliPath(string baseDirectory)
     {
@@ -77,33 +125,66 @@ public sealed class CliRunner
         return startInfo;
     }
 
-    public async Task<CliProcessResult> RunAsync(
+    public Task<CliProcessResult> RunAsync(
         string output,
         string? caseId,
         Action<RuntimeStatus>? onRuntimeStatus = null,
         Action? onMalformedRuntimeStatus = null,
         Action? onProcessExited = null)
     {
+        return _execution(output, caseId, onRuntimeStatus, onMalformedRuntimeStatus, onProcessExited);
+    }
+
+    private static Task<CliProcessResult> ExecuteDefaultProcessAsync(
+        string output,
+        string? caseId,
+        Action<RuntimeStatus>? onRuntimeStatus,
+        Action? onMalformedRuntimeStatus,
+        Action? onProcessExited)
+    {
+        return ExecuteProcessAsync(output, caseId, onRuntimeStatus, onMalformedRuntimeStatus, onProcessExited, null, null);
+    }
+
+    private static async Task<CliProcessResult> ExecuteProcessAsync(
+        string output,
+        string? caseId,
+        Action<RuntimeStatus>? onRuntimeStatus,
+        Action? onMalformedRuntimeStatus,
+        Action? onProcessExited,
+        string? baseDirectory,
+        Action<Process>? afterStartForTest)
+    {
+        var stopwatch = Stopwatch.StartNew();
         ProcessStartInfo startInfo;
         try
         {
-            startInfo = BuildStartInfo(output, caseId);
+            startInfo = baseDirectory is null
+                ? BuildStartInfo(output, caseId)
+                : BuildStartInfoForBaseDirectory(baseDirectory, output, caseId);
         }
         catch (Exception exception) when (exception is ArgumentException or FileNotFoundException or IOException)
         {
-            return new CliProcessResult(false, null, string.Empty, string.Empty, BoundedDetail(exception.Message));
+            ProcessStartFailureClass failureClass = exception is FileNotFoundException
+                ? ProcessStartFailureClass.SIBLING_NOT_FOUND
+                : exception is ArgumentException
+                    ? ProcessStartFailureClass.INVALID_START_CONFIGURATION
+                    : ProcessStartFailureClass.START_EXCEPTION;
+            return CreateFailureResult(false, null, string.Empty, string.Empty, BoundedDetail(exception.Message), failureClass, stopwatch.ElapsedMilliseconds);
         }
 
         using var process = new Process { StartInfo = startInfo };
+        bool processStarted = false;
         try
         {
             if (!process.Start())
             {
-                return new CliProcessResult(false, null, string.Empty, string.Empty, "The sibling tannang.exe could not be started.");
+                return CreateFailureResult(false, null, string.Empty, string.Empty, "The sibling tannang.exe could not be started.", ProcessStartFailureClass.START_RETURNED_FALSE, stopwatch.ElapsedMilliseconds);
             }
+            processStarted = true;
+            afterStartForTest?.Invoke(process);
 
             Task<string> stdoutTask = process.StandardOutput.ReadToEndAsync();
-            Task<string> stderrTask = ReadStandardErrorAsync(process.StandardError, onRuntimeStatus, onMalformedRuntimeStatus);
+            Task<StderrCapture> stderrTask = ReadStandardErrorAsync(process.StandardError, onRuntimeStatus, onMalformedRuntimeStatus);
             await process.WaitForExitAsync().ConfigureAwait(true);
             try
             {
@@ -114,21 +195,79 @@ public sealed class CliRunner
                 // Runtime UI observation cannot affect collection result handling.
             }
             string stdout = await stdoutTask.ConfigureAwait(true);
-            string stderr = await stderrTask.ConfigureAwait(true);
-            return new CliProcessResult(true, process.ExitCode, stdout, stderr);
+            StderrCapture stderr = await stderrTask.ConfigureAwait(true);
+            return new CliProcessResult(true, process.ExitCode, stdout, stderr.Diagnostics, diagnostics: new CliExecutionDiagnostics
+            {
+                ProcessStarted = true,
+                ProcessStartFailureClass = ProcessStartFailureClass.NONE,
+                ExitCode = process.ExitCode,
+                StdoutPresent = !string.IsNullOrWhiteSpace(stdout),
+                StdoutLength = CliExecutionDiagnostics.CapStdoutLength(stdout.Length),
+                RuntimeEventCount = stderr.RuntimeEventCount,
+                MalformedRuntimeSignalCount = stderr.MalformedRuntimeSignalCount,
+                OrdinaryStderrLineCount = stderr.OrdinaryStderrLineCount,
+                OrdinaryStderrBytesObserved = stderr.OrdinaryStderrBytesObserved,
+                ProcessElapsedMilliseconds = stopwatch.ElapsedMilliseconds
+            });
         }
         catch (Exception exception) when (exception is InvalidOperationException or IOException or System.ComponentModel.Win32Exception)
         {
-            return new CliProcessResult(false, null, string.Empty, string.Empty, BoundedDetail(exception.Message));
+            int? exitCode = processStarted ? TryGetExitCode(process) : null;
+            return CreateFailureResult(processStarted, exitCode, string.Empty, string.Empty, BoundedDetail(exception.Message),
+                processStarted ? ProcessStartFailureClass.NONE : ProcessStartFailureClass.START_EXCEPTION,
+                stopwatch.ElapsedMilliseconds);
         }
     }
 
-    private static async Task<string> ReadStandardErrorAsync(
+    private static CliProcessResult CreateFailureResult(
+        bool processStarted,
+        int? exitCode,
+        string stdout,
+        string stderr,
+        string failureDetail,
+        ProcessStartFailureClass startFailureClass,
+        long elapsedMilliseconds)
+    {
+        return new CliProcessResult(processStarted, exitCode, stdout, stderr, failureDetail, new CliExecutionDiagnostics
+        {
+            ProcessStarted = processStarted,
+            ProcessStartFailureClass = startFailureClass,
+            ExitCode = exitCode,
+            StdoutPresent = !string.IsNullOrWhiteSpace(stdout),
+            StdoutLength = CliExecutionDiagnostics.CapStdoutLength(stdout.Length),
+            ProcessElapsedMilliseconds = elapsedMilliseconds
+        });
+    }
+
+    private static int? TryGetExitCode(Process process)
+    {
+        try
+        {
+            return process.HasExited ? process.ExitCode : null;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    private sealed record StderrCapture(
+        string Diagnostics,
+        int RuntimeEventCount,
+        int MalformedRuntimeSignalCount,
+        int OrdinaryStderrLineCount,
+        int OrdinaryStderrBytesObserved);
+
+    private static async Task<StderrCapture> ReadStandardErrorAsync(
         StreamReader reader,
         Action<RuntimeStatus>? onRuntimeStatus,
         Action? onMalformedRuntimeStatus)
     {
         var diagnostics = new StringBuilder();
+        int runtimeEventCount = 0;
+        int malformedRuntimeSignalCount = 0;
+        int ordinaryStderrLineCount = 0;
+        int ordinaryStderrBytesObserved = 0;
         string? line;
         while ((line = await reader.ReadLineAsync().ConfigureAwait(false)) is not null)
         {
@@ -137,6 +276,7 @@ public sealed class CliRunner
                 try
                 {
                     RuntimeStatus status = RuntimeStatusParser.Parse(line);
+                    runtimeEventCount = CliExecutionDiagnostics.SaturatingIncrement(runtimeEventCount, CliExecutionDiagnostics.RuntimeEventCountCap);
                     try
                     {
                         onRuntimeStatus?.Invoke(status);
@@ -148,6 +288,7 @@ public sealed class CliRunner
                 }
                 catch (RuntimeStatusException)
                 {
+                    malformedRuntimeSignalCount = CliExecutionDiagnostics.SaturatingIncrement(malformedRuntimeSignalCount, CliExecutionDiagnostics.MalformedRuntimeSignalCountCap);
                     try
                     {
                         onMalformedRuntimeStatus?.Invoke();
@@ -160,9 +301,14 @@ public sealed class CliRunner
                 continue;
             }
 
+            ordinaryStderrLineCount = CliExecutionDiagnostics.SaturatingIncrement(ordinaryStderrLineCount, CliExecutionDiagnostics.OrdinaryStderrLineCountCap);
+            ordinaryStderrBytesObserved = CliExecutionDiagnostics.SaturatingAdd(
+                ordinaryStderrBytesObserved,
+                Encoding.UTF8.GetByteCount(line),
+                CliExecutionDiagnostics.OrdinaryStderrBytesObservedCap);
             AppendBoundedDiagnostic(diagnostics, line);
         }
-        return diagnostics.ToString();
+        return new StderrCapture(diagnostics.ToString(), runtimeEventCount, malformedRuntimeSignalCount, ordinaryStderrLineCount, ordinaryStderrBytesObserved);
     }
 
     private static void AppendBoundedDiagnostic(StringBuilder diagnostics, string line)

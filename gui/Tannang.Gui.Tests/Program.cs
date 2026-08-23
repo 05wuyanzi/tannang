@@ -34,7 +34,19 @@ internal static class TestRunner
             ("complete state fails closed for degraded exits", CompleteStateFailsClosedForDegradedExits),
             ("failed state fails closed for degraded exits", FailedStateFailsClosedForDegradedExits),
             ("process start failure maps to FAILED", ProcessStartFailureMapsToFailed),
+            ("process start failure diagnostics are safe", ProcessStartFailureDiagnosticsAreSafe),
+            ("controlled start exception reaches safe mapper", ControlledStartExceptionReachesSafeMapper),
+            ("controlled start false reaches safe mapper", ControlledStartFalseReachesSafeMapper),
+            ("started child with unavailable exit remains started", StartedChildWithUnavailableExitRemainsStarted),
+            ("real process start failure reaches production runner", RealProcessStartFailureReachesProductionRunner),
             ("unexpected exit maps to FAILED", UnexpectedExitMapsToFailed),
+            ("empty stdout exit codes classify safely", EmptyStdoutExitCodesClassifySafely),
+            ("malformed stdout gets contract diagnostic", MalformedStdoutGetsContractDiagnostic),
+            ("valid JSON semantic failure has no early diagnostic", ValidJsonSemanticFailureHasNoEarlyDiagnostic),
+            ("valid final JSON metadata is true for mapped results", ValidFinalJsonMetadataIsTrueForMappedResults),
+            ("diagnostics preserve fast exit metadata", DiagnosticsPreserveFastExitMetadata),
+            ("diagnostic counters saturate", DiagnosticCountersSaturate),
+            ("copy diagnostics use safe metadata", CopyDiagnosticsUseSafeMetadata),
             ("verified partial package path is retained", VerifiedPartialRetainsPackage),
             ("ArgumentList preserves output spaces", OutputArgumentPreservesSpaces),
             ("ArgumentList preserves case ID quotes", CaseIdArgumentPreservesQuotes),
@@ -223,11 +235,194 @@ internal static class TestRunner
         AssertEqual(GuiResultState.Failed, result.State);
     }
 
+    private static void ProcessStartFailureDiagnosticsAreSafe()
+    {
+        const string secret = "START-EXCEPTION-SECRET";
+        MappedResult result = ResultMapper.Map(new CliProcessResult(false, null, string.Empty, string.Empty, secret));
+        AssertEqual(DiagnosticClass.PROCESS_START_FAILED, result.Diagnostics?.DiagnosticClass);
+        AssertTrue(!result.FailureDetail!.Contains(secret, StringComparison.Ordinal));
+        AssertTrue(!result.Diagnostics!.ToSafeClipboardText().Contains(secret, StringComparison.Ordinal));
+    }
+
+    private static void ControlledStartExceptionReachesSafeMapper()
+    {
+        const string secret = "CONTROLLED-START-EXCEPTION";
+        CliRunner runner = CreateControlledRunner(new CliProcessResult(false, null, string.Empty, string.Empty, secret));
+        CliProcessResult processResult = runner.RunAsync(@"C:\output", null).GetAwaiter().GetResult();
+        MappedResult result = ResultMapper.Map(processResult);
+        AssertEqual(DiagnosticClass.PROCESS_START_FAILED, result.Diagnostics?.DiagnosticClass);
+        AssertTrue(!result.FailureDetail!.Contains(secret, StringComparison.Ordinal));
+    }
+
+    private static void ControlledStartFalseReachesSafeMapper()
+    {
+        CliRunner runner = CreateControlledRunner(new CliProcessResult(false, null, string.Empty, string.Empty, "returned false"));
+        CliProcessResult processResult = runner.RunAsync(@"C:\output", null).GetAwaiter().GetResult();
+        MappedResult result = ResultMapper.Map(processResult);
+        AssertEqual(DiagnosticClass.PROCESS_START_FAILED, result.Diagnostics?.DiagnosticClass);
+        AssertEqual((int?)null, result.Diagnostics?.ExitCode);
+    }
+
+    private static void StartedChildWithUnavailableExitRemainsStarted()
+    {
+        using TemporaryDirectory directory = new();
+        string comSpec = Environment.GetEnvironmentVariable("ComSpec")
+            ?? throw new InvalidOperationException("ComSpec is unavailable on this Windows test host.");
+        File.Copy(comSpec, Path.Combine(directory.Path, "tannang.exe"));
+        CliProcessResult processResult = CreatePostStartFailureRunner(directory.Path)
+            .RunAsync(@"C:\output", null)
+            .GetAwaiter()
+            .GetResult();
+        AssertEqual(true, processResult.Started);
+        AssertEqual((int?)null, processResult.ExitCode);
+        AssertEqual(ProcessStartFailureClass.NONE, processResult.Diagnostics.ProcessStartFailureClass);
+        MappedResult result = ResultMapper.Map(processResult);
+        AssertEqual(GuiResultState.Failed, result.State);
+        AssertEqual(true, result.Diagnostics?.ProcessStarted ?? false);
+        AssertEqual((int?)null, result.Diagnostics?.ExitCode);
+        AssertEqual(ProcessStartFailureClass.NONE, result.Diagnostics?.ProcessStartFailureClass);
+        AssertEqual(DiagnosticClass.UNKNOWN_CHILD_FAILURE, result.Diagnostics?.DiagnosticClass);
+        AssertTrue(result.Diagnostics!.ToTechnicalSummary().Contains("Process started: Yes", StringComparison.Ordinal));
+        AssertTrue(result.Diagnostics.ToTechnicalSummary().Contains("Exit code: Unavailable", StringComparison.Ordinal));
+    }
+
+    private static void RealProcessStartFailureReachesProductionRunner()
+    {
+        using TemporaryDirectory directory = new();
+        File.WriteAllText(Path.Combine(directory.Path, "tannang.exe"), "not a Windows executable");
+        CliProcessResult processResult = CreateBaseDirectoryRunner(directory.Path)
+            .RunAsync(@"C:\output", null)
+            .GetAwaiter()
+            .GetResult();
+        AssertEqual(false, processResult.Started);
+        AssertEqual((int?)null, processResult.ExitCode);
+        AssertTrue(processResult.Diagnostics.ProcessStartFailureClass is
+            ProcessStartFailureClass.START_EXCEPTION or ProcessStartFailureClass.START_RETURNED_FALSE);
+        MappedResult result = ResultMapper.Map(processResult);
+        AssertEqual(DiagnosticClass.PROCESS_START_FAILED, result.Diagnostics?.DiagnosticClass);
+        AssertTrue(!result.FailureDetail!.Contains("not a Windows executable", StringComparison.Ordinal));
+    }
+
     private static void UnexpectedExitMapsToFailed()
     {
         MappedResult result = ResultMapper.Map(ProcessResult(21, SummaryJson("PARTIAL", true, @"C:\\package")));
         AssertEqual(GuiResultState.Failed, result.State);
         AssertNull(result.PackageReference);
+    }
+
+    private static void EmptyStdoutExitCodesClassifySafely()
+    {
+        foreach ((int exitCode, DiagnosticClass expected) in new[]
+        {
+            (0, DiagnosticClass.CLI_EXITED_WITHOUT_FINAL_RESULT),
+            (2, DiagnosticClass.CLI_USAGE_OR_ARGUMENT_ERROR),
+            (10, DiagnosticClass.CLI_EXITED_WITHOUT_FINAL_RESULT),
+            (11, DiagnosticClass.CLI_EXITED_WITHOUT_FINAL_RESULT),
+            (12, DiagnosticClass.CLI_EXITED_WITHOUT_FINAL_RESULT),
+            (13, DiagnosticClass.CLI_PROVIDER_OR_STARTUP_FAILURE),
+            (14, DiagnosticClass.CLI_INTERNAL_OUTPUT_FAILURE),
+            (20, DiagnosticClass.CLI_INTEGRITY_OR_PATH_FAILURE),
+            (21, DiagnosticClass.CLI_INTEGRITY_OR_PATH_FAILURE),
+            (99, DiagnosticClass.UNKNOWN_CHILD_FAILURE)
+        })
+        {
+            MappedResult result = ResultMapper.Map(ProcessResult(exitCode, string.Empty));
+            AssertEqual(GuiResultState.Failed, result.State);
+            AssertEqual(expected, result.Diagnostics?.DiagnosticClass);
+            AssertNull(result.PackageReference);
+        }
+    }
+
+    private static void MalformedStdoutGetsContractDiagnostic()
+    {
+        MappedResult result = ResultMapper.Map(ProcessResult(0, "{not-json"));
+        AssertEqual(GuiResultState.Failed, result.State);
+        AssertEqual(DiagnosticClass.CLI_OUTPUT_CONTRACT_INVALID, result.Diagnostics?.DiagnosticClass);
+        AssertEqual(false, result.Diagnostics?.ValidFinalJson ?? true);
+        AssertTrue(!result.FailureDetail!.Contains("{not-json", StringComparison.Ordinal));
+    }
+
+    private static void ValidJsonSemanticFailureHasNoEarlyDiagnostic()
+    {
+        MappedResult result = ResultMapper.Map(ProcessResult(0, SummaryJson("COMPLETE", false, @"C:\package")));
+        AssertEqual(GuiResultState.Failed, result.State);
+        AssertEqual(true, result.Diagnostics?.ValidFinalJson ?? false);
+        AssertEqual(DiagnosticClass.NONE, result.Diagnostics?.DiagnosticClass);
+    }
+
+    private static void ValidFinalJsonMetadataIsTrueForMappedResults()
+    {
+        (int ExitCode, string RunState)[] cases =
+        {
+            (0, "COMPLETE"),
+            (10, "PARTIAL"),
+            (12, "PARTIAL"),
+            (13, "FAILED")
+        };
+        foreach ((int exitCode, string runState) in cases)
+        {
+            MappedResult result = ResultMapper.Map(ProcessResult(exitCode, SummaryJson(runState, true, @"C:\package")));
+            AssertEqual(true, result.Diagnostics?.ValidFinalJson ?? false);
+            AssertEqual(DiagnosticClass.NONE, result.Diagnostics?.DiagnosticClass);
+        }
+    }
+
+    private static void DiagnosticsPreserveFastExitMetadata()
+    {
+        var diagnostics = new CliExecutionDiagnostics
+        {
+            ProcessStarted = true,
+            ProcessStartFailureClass = ProcessStartFailureClass.NONE,
+            ExitCode = 13,
+            StdoutPresent = false,
+            StdoutLength = 0,
+            RuntimeEventCount = 2,
+            MalformedRuntimeSignalCount = 1,
+            OrdinaryStderrLineCount = 3,
+            OrdinaryStderrBytesObserved = 12,
+            ProcessElapsedMilliseconds = 4
+        };
+        MappedResult result = ResultMapper.Map(new CliProcessResult(true, 13, string.Empty, "diagnostic", diagnostics: diagnostics));
+        AssertEqual(true, result.Diagnostics?.ProcessStarted ?? false);
+        AssertEqual((int?)13, result.Diagnostics?.ExitCode);
+        AssertEqual(false, result.Diagnostics?.StdoutPresent ?? true);
+        AssertEqual(2, result.Diagnostics?.RuntimeEventCount ?? -1);
+        AssertEqual(1, result.Diagnostics?.MalformedRuntimeSignalCount ?? -1);
+        AssertEqual(4L, result.Diagnostics?.ProcessElapsedMilliseconds ?? -1L);
+    }
+
+    private static void DiagnosticCountersSaturate()
+    {
+        AssertEqual(CliExecutionDiagnostics.RuntimeEventCountCap,
+            CliExecutionDiagnostics.SaturatingIncrement(CliExecutionDiagnostics.RuntimeEventCountCap, CliExecutionDiagnostics.RuntimeEventCountCap));
+        AssertEqual(CliExecutionDiagnostics.OrdinaryStderrBytesObservedCap,
+            CliExecutionDiagnostics.SaturatingAdd(CliExecutionDiagnostics.OrdinaryStderrBytesObservedCap - 1, 100, CliExecutionDiagnostics.OrdinaryStderrBytesObservedCap));
+        AssertEqual(CliExecutionDiagnostics.StdoutLengthCap,
+            CliExecutionDiagnostics.CapStdoutLength(CliExecutionDiagnostics.StdoutLengthCap + 1));
+    }
+
+    private static void CopyDiagnosticsUseSafeMetadata()
+    {
+        const string secret = "RAW-SECRET-DO-NOT-COPY";
+        var diagnostics = new CliExecutionDiagnostics
+        {
+            ProcessStarted = true,
+            ProcessStartFailureClass = ProcessStartFailureClass.NONE,
+            ExitCode = 13,
+            StdoutPresent = false,
+            StdoutLength = 0,
+            ValidFinalJson = false,
+            RuntimeEventCount = 0,
+            MalformedRuntimeSignalCount = 0,
+            OrdinaryStderrLineCount = 1,
+            OrdinaryStderrBytesObserved = 10,
+            ProcessElapsedMilliseconds = 5,
+            DiagnosticClass = DiagnosticClass.CLI_PROVIDER_OR_STARTUP_FAILURE
+        };
+        string clipboardText = diagnostics.ToSafeClipboardText();
+        AssertTrue(clipboardText.Contains("Diagnostic class: CLI_PROVIDER_OR_STARTUP_FAILURE", StringComparison.Ordinal));
+        AssertTrue(!clipboardText.Contains(secret, StringComparison.Ordinal));
+        AssertTrue(!clipboardText.Contains("Output destination", StringComparison.Ordinal));
     }
 
     private static void VerifiedPartialRetainsPackage()
@@ -533,13 +728,21 @@ internal static class TestRunner
             throw new InvalidOperationException("observer failure must be isolated");
         });
         var malformedCallback = new Action(() => malformed++);
-        var task = (Task<string>)(method.Invoke(null, new object?[] { reader, validCallback, malformedCallback })
+        Task task = (Task)(method.Invoke(null, new object?[] { reader, validCallback, malformedCallback })
             ?? throw new InvalidOperationException("Runtime stderr router returned no task."));
-        string diagnostics = task.GetAwaiter().GetResult();
+        task.GetAwaiter().GetResult();
+        object capture = task.GetType().GetProperty("Result")?.GetValue(task)
+            ?? throw new InvalidOperationException("Runtime stderr router returned no capture.");
+        string diagnostics = (string)(capture.GetType().GetProperty("Diagnostics")?.GetValue(capture)
+            ?? throw new InvalidOperationException("Runtime stderr capture had no diagnostics."));
         AssertEqual(1, valid);
         AssertEqual(1, malformed);
         AssertEqual("ordinary bounded diagnostic", diagnostics);
         AssertTrue(!diagnostics.Contains(secret, StringComparison.Ordinal));
+
+        AssertEqual(1, (int)(capture.GetType().GetProperty("RuntimeEventCount")?.GetValue(capture) ?? -1));
+        AssertEqual(1, (int)(capture.GetType().GetProperty("MalformedRuntimeSignalCount")?.GetValue(capture) ?? -1));
+        AssertEqual(1, (int)(capture.GetType().GetProperty("OrdinaryStderrLineCount")?.GetValue(capture) ?? -1));
     }
 
     private static void LiveLogEnforcesLineBoundAndMarker()
@@ -603,6 +806,70 @@ internal static class TestRunner
     private static CliProcessResult ProcessResult(int exitCode, string stdout)
     {
         return new CliProcessResult(true, exitCode, stdout, string.Empty);
+    }
+
+    private static CliRunner CreateControlledRunner(CliProcessResult result)
+    {
+        Type delegateType = typeof(CliRunner).Assembly.GetType("Tannang.Gui.ChildProcessExecution")
+            ?? throw new InvalidOperationException("Child process execution seam was not found.");
+        MethodInfo method = typeof(TestRunner).GetMethod(nameof(ReturnControlledResult), BindingFlags.NonPublic | BindingFlags.Static)
+            ?? throw new InvalidOperationException("Controlled execution method was not found.");
+        Delegate execution = method.CreateDelegate(delegateType, result);
+        ConstructorInfo constructor = typeof(CliRunner).GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                new[] { delegateType },
+                modifiers: null)
+            ?? throw new InvalidOperationException("Controlled CliRunner constructor was not found.");
+        return (CliRunner)constructor.Invoke(new object?[] { execution });
+    }
+
+    private static CliRunner CreateBaseDirectoryRunner(string baseDirectory)
+    {
+        ConstructorInfo constructor = typeof(CliRunner).GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                new[] { typeof(string) },
+                modifiers: null)
+            ?? throw new InvalidOperationException("Base-directory CliRunner constructor was not found.");
+        return (CliRunner)constructor.Invoke(new object?[] { baseDirectory });
+    }
+
+    private static CliRunner CreatePostStartFailureRunner(string baseDirectory)
+    {
+        Action<Process> afterStart = process =>
+        {
+            try
+            {
+                if (!process.HasExited)
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+            }
+            catch
+            {
+            }
+            process.Dispose();
+            throw new InvalidOperationException("controlled post-start failure");
+        };
+        ConstructorInfo constructor = typeof(CliRunner).GetConstructor(
+                BindingFlags.Instance | BindingFlags.NonPublic,
+                binder: null,
+                new[] { typeof(string), typeof(Action<Process>) },
+                modifiers: null)
+            ?? throw new InvalidOperationException("Post-start failure CliRunner constructor was not found.");
+        return (CliRunner)constructor.Invoke(new object?[] { baseDirectory, afterStart });
+    }
+
+    private static Task<CliProcessResult> ReturnControlledResult(
+        CliProcessResult result,
+        string output,
+        string? caseId,
+        Action<RuntimeStatus>? onRuntimeStatus,
+        Action? onMalformedRuntimeStatus,
+        Action? onProcessExited)
+    {
+        return Task.FromResult(result);
     }
 
     private static string SummaryJson(string runState, bool finalizationVerified, string packageReference, bool includePackageReference = true)

@@ -19,13 +19,16 @@ public sealed class MainForm : Form
     private readonly Label _latestActivityLabel = new();
     private readonly Label _elapsedLabel = new();
     private readonly Label _summaryLabel = new();
+    private readonly Label _diagnosticLabel = new();
     private readonly TextBox _packagePath = new();
+    private readonly Button _copyDiagnosticsButton = new();
     private readonly LiveLogView _liveLog = new();
     private readonly CliRunner _cliRunner = new();
     private readonly RunStateGuard _runState = new();
     private readonly RuntimeLivenessTracker _liveness = new();
     private readonly Stopwatch _runClock = new();
     private readonly System.Windows.Forms.Timer _uiTimer = new() { Interval = 1000 };
+    private CliExecutionDiagnostics? _lastDiagnostics;
 
     public MainForm()
     {
@@ -65,7 +68,7 @@ public sealed class MainForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 92));
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 70));
         layout.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 108));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 144));
 
         layout.Controls.Add(BuildInputZone(), 0, 0);
         layout.Controls.Add(BuildStatusZone(), 0, 1);
@@ -131,11 +134,13 @@ public sealed class MainForm : Form
 
     private Control BuildTerminalZone()
     {
-        var terminal = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 2, RowCount = 2 };
+        var terminal = new TableLayoutPanel { Dock = DockStyle.Fill, ColumnCount = 3, RowCount = 3 };
         terminal.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 150));
         terminal.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        terminal.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
-        terminal.RowStyles.Add(new RowStyle(SizeType.Percent, 50));
+        terminal.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140));
+        terminal.RowStyles.Add(new RowStyle(SizeType.Percent, 34));
+        terminal.RowStyles.Add(new RowStyle(SizeType.Percent, 33));
+        terminal.RowStyles.Add(new RowStyle(SizeType.Percent, 33));
 
         _summaryLabel.Dock = DockStyle.Fill;
         _summaryLabel.AutoEllipsis = true;
@@ -143,12 +148,28 @@ public sealed class MainForm : Form
         terminal.Controls.Add(new Label { Text = "Final result", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 0);
         terminal.Controls.Add(_summaryLabel, 1, 0);
 
+        _copyDiagnosticsButton.Text = "Copy diagnostics";
+        _copyDiagnosticsButton.AutoSize = true;
+        _copyDiagnosticsButton.Visible = false;
+        _copyDiagnosticsButton.Enabled = false;
+        _copyDiagnosticsButton.AccessibleName = "Copy safe execution diagnostics";
+        _copyDiagnosticsButton.Click += CopyDiagnosticsButton_Click;
+        terminal.Controls.Add(_copyDiagnosticsButton, 2, 0);
+
+        _diagnosticLabel.Dock = DockStyle.Fill;
+        _diagnosticLabel.AutoEllipsis = true;
+        _diagnosticLabel.AccessibleName = "Technical execution diagnostic";
+        terminal.Controls.Add(new Label { Text = "Technical diagnostic", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 1);
+        terminal.Controls.Add(_diagnosticLabel, 1, 1);
+        terminal.SetColumnSpan(_diagnosticLabel, 2);
+
         _packagePath.Dock = DockStyle.Fill;
         _packagePath.ReadOnly = true;
         _packagePath.TabStop = false;
         _packagePath.AccessibleName = "Verified Evidence Package location";
-        terminal.Controls.Add(new Label { Text = "Evidence Package", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 1);
-        terminal.Controls.Add(_packagePath, 1, 1);
+        terminal.Controls.Add(new Label { Text = "Evidence Package", Dock = DockStyle.Fill, TextAlign = ContentAlignment.MiddleLeft }, 0, 2);
+        terminal.Controls.Add(_packagePath, 1, 2);
+        terminal.SetColumnSpan(_packagePath, 2);
         return terminal;
     }
 
@@ -209,14 +230,14 @@ public sealed class MainForm : Form
             _liveness.Finish();
             SetFinishedState(result);
         }
-        catch (Exception exception)
+        catch (Exception)
         {
             _liveness.Finish();
             SetFinishedState(new MappedResult
             {
                 State = GuiResultState.Failed,
                 Summary = "Collection failed.",
-                FailureDetail = exception.Message
+                FailureDetail = "The GUI could not complete result mapping."
             });
         }
         finally
@@ -233,6 +254,7 @@ public sealed class MainForm : Form
 
     private void SetIdleState()
     {
+        ClearDiagnostics();
         _collectorStateLabel.Text = "IDLE";
         _livenessLabel.Text = "STARTING";
         _latestActivityLabel.Text = "No activity yet.";
@@ -243,6 +265,7 @@ public sealed class MainForm : Form
 
     private void SetRunningState()
     {
+        ClearDiagnostics();
         _liveness.Start();
         _liveLog.ClearLog();
         _runClock.Restart();
@@ -300,11 +323,40 @@ public sealed class MainForm : Form
     private void SetFinishedState(MappedResult result)
     {
         _collectorStateLabel.Text = $"FINISHED: {result.State.ToString().ToUpperInvariant()}";
-        _summaryLabel.Text = string.IsNullOrEmpty(result.FailureDetail)
-            ? result.Summary
-            : $"{result.Summary} {result.FailureDetail}";
+        _summaryLabel.Text = result.Summary;
+        _diagnosticLabel.Text = result.Diagnostics?.IsDiagnosticFailure == true
+            ? result.Diagnostics.ToTechnicalSummary()
+            : result.FailureDetail ?? string.Empty;
         _packagePath.Text = result.PackageReference ?? string.Empty;
+        _lastDiagnostics = result.Diagnostics?.IsDiagnosticFailure == true ? result.Diagnostics : null;
+        _copyDiagnosticsButton.Visible = _lastDiagnostics is not null;
+        _copyDiagnosticsButton.Enabled = _lastDiagnostics is not null;
         UpdateRuntimeLabels();
+    }
+
+    private void ClearDiagnostics()
+    {
+        _lastDiagnostics = null;
+        _diagnosticLabel.Text = string.Empty;
+        _copyDiagnosticsButton.Visible = false;
+        _copyDiagnosticsButton.Enabled = false;
+    }
+
+    private void CopyDiagnosticsButton_Click(object? sender, EventArgs e)
+    {
+        if (_lastDiagnostics is null)
+        {
+            return;
+        }
+
+        try
+        {
+            Clipboard.SetText(_lastDiagnostics.ToSafeClipboardText());
+        }
+        catch
+        {
+            MessageBox.Show(this, "Could not copy diagnostics.", "Copy diagnostics", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+        }
     }
 
     private void PostToUi(Action action)

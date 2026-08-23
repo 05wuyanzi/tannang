@@ -18,15 +18,51 @@ public sealed class MappedResult
     public required string Summary { get; init; }
     public string? PackageReference { get; init; }
     public string? FailureDetail { get; init; }
+    public CliExecutionDiagnostics? Diagnostics { get; init; }
 }
 
 public static class ResultMapper
 {
     public static MappedResult Map(CliProcessResult processResult)
     {
-        if (!processResult.Started || processResult.ExitCode is null)
+        if (!processResult.Started)
         {
-            return Failed(processResult.FailureDetail ?? "The CLI process could not be started.");
+            CliExecutionDiagnostics diagnostics = processResult.Diagnostics with
+            {
+                ProcessStarted = false,
+                ExitCode = null,
+                ValidFinalJson = false,
+                DiagnosticClass = DiagnosticClass.PROCESS_START_FAILED
+            };
+            return Failed(diagnostics.OperatorMessage, diagnostics);
+        }
+
+        if (processResult.ExitCode is null)
+        {
+            CliExecutionDiagnostics diagnostics = processResult.Diagnostics with
+            {
+                ProcessStarted = true,
+                ProcessStartFailureClass = ProcessStartFailureClass.NONE,
+                ExitCode = null,
+                ValidFinalJson = false,
+                DiagnosticClass = DiagnosticClass.UNKNOWN_CHILD_FAILURE
+            };
+            return Failed(diagnostics.OperatorMessage, diagnostics);
+        }
+
+        if (string.IsNullOrWhiteSpace(processResult.Stdout))
+        {
+            CliExecutionDiagnostics diagnostics = processResult.Diagnostics with
+            {
+                ProcessStarted = true,
+                ProcessStartFailureClass = ProcessStartFailureClass.NONE,
+                ExitCode = processResult.ExitCode,
+                StdoutPresent = false,
+                StdoutLength = CliExecutionDiagnostics.CapStdoutLength(processResult.Stdout.Length),
+                ValidFinalJson = false,
+                DiagnosticClass = ClassifyEmptyStdout(processResult.ExitCode.Value)
+            };
+            return Failed(diagnostics.OperatorMessage, diagnostics);
         }
 
         CliSummary summary;
@@ -34,74 +70,109 @@ public static class ResultMapper
         {
             summary = CliContractParser.Parse(processResult.Stdout);
         }
-        catch (CliContractException exception)
+        catch (CliContractException)
         {
-            return Failed(BoundedDetail(exception.Message));
+            CliExecutionDiagnostics diagnostics = processResult.Diagnostics with
+            {
+                ProcessStarted = true,
+                ProcessStartFailureClass = ProcessStartFailureClass.NONE,
+                ExitCode = processResult.ExitCode,
+                StdoutPresent = true,
+                StdoutLength = CliExecutionDiagnostics.CapStdoutLength(processResult.Stdout.Length),
+                ValidFinalJson = false,
+                DiagnosticClass = DiagnosticClass.CLI_OUTPUT_CONTRACT_INVALID
+            };
+            return Failed(diagnostics.OperatorMessage, diagnostics);
         }
+
+        CliExecutionDiagnostics validFinalDiagnostics = processResult.Diagnostics with
+        {
+            ProcessStarted = true,
+            ProcessStartFailureClass = ProcessStartFailureClass.NONE,
+            ExitCode = processResult.ExitCode,
+            StdoutPresent = true,
+            StdoutLength = CliExecutionDiagnostics.CapStdoutLength(processResult.Stdout.Length),
+            ValidFinalJson = true,
+            DiagnosticClass = DiagnosticClass.NONE
+        };
 
         switch (processResult.ExitCode.Value)
         {
             case 0:
                 if (!string.Equals(summary.RunState, "COMPLETE", StringComparison.Ordinal))
                 {
-                    return Failed(ContractFailure(summary));
+                    return Failed(ContractFailure(summary), validFinalDiagnostics);
                 }
 
                 return summary.FinalizationVerified && summary.PackageReference.Length > 0
-                    ? Success(summary.PackageReference)
-                    : Failed(ContractFailure(summary));
+                    ? Success(summary.PackageReference, validFinalDiagnostics)
+                    : Failed(ContractFailure(summary), validFinalDiagnostics);
             case 10 or 11:
                 return string.Equals(summary.RunState, "PARTIAL", StringComparison.Ordinal)
-                    ? Partial(summary)
-                    : Failed(ExitRunStateFailure(processResult.ExitCode.Value, summary.RunState));
+                    ? Partial(summary, validFinalDiagnostics)
+                    : Failed(ExitRunStateFailure(processResult.ExitCode.Value, summary.RunState), validFinalDiagnostics);
             case 12:
                 return string.Equals(summary.RunState, "PARTIAL", StringComparison.Ordinal)
-                    ? Blocked(summary)
-                    : Failed(ExitRunStateFailure(processResult.ExitCode.Value, summary.RunState));
+                    ? Blocked(summary, validFinalDiagnostics)
+                    : Failed(ExitRunStateFailure(processResult.ExitCode.Value, summary.RunState), validFinalDiagnostics);
             default:
-                return Failed(ExitFailure(processResult.ExitCode.Value, processResult.Stderr));
+                return Failed("The collector returned an unexpected exit code.", validFinalDiagnostics);
         }
     }
 
-    private static MappedResult Success(string packageReference)
+    private static MappedResult Success(string packageReference, CliExecutionDiagnostics diagnostics)
     {
         return new MappedResult
         {
             State = GuiResultState.Complete,
             Summary = "Collection complete.",
-            PackageReference = packageReference
+            PackageReference = packageReference,
+            Diagnostics = diagnostics
         };
     }
 
-    private static MappedResult Partial(CliSummary summary)
+    private static MappedResult Partial(CliSummary summary, CliExecutionDiagnostics diagnostics)
     {
         return new MappedResult
         {
             State = GuiResultState.Partial,
             Summary = "Collection finished with partial evidence.",
-            PackageReference = VerifiedPackage(summary)
+            PackageReference = VerifiedPackage(summary),
+            Diagnostics = diagnostics
         };
     }
 
-    private static MappedResult Blocked(CliSummary summary)
+    private static MappedResult Blocked(CliSummary summary, CliExecutionDiagnostics diagnostics)
     {
         return new MappedResult
         {
             State = GuiResultState.Blocked,
             Summary = "Collection was blocked.",
-            PackageReference = VerifiedPackage(summary)
+            PackageReference = VerifiedPackage(summary),
+            Diagnostics = diagnostics
         };
     }
 
-    private static MappedResult Failed(string detail)
+    private static MappedResult Failed(string detail, CliExecutionDiagnostics? diagnostics = null)
     {
         return new MappedResult
         {
             State = GuiResultState.Failed,
             Summary = "Collection failed.",
-            FailureDetail = BoundedDetail(detail)
+            FailureDetail = BoundedDetail(detail),
+            Diagnostics = diagnostics
         };
     }
+
+    private static DiagnosticClass ClassifyEmptyStdout(int exitCode) => exitCode switch
+    {
+        2 => DiagnosticClass.CLI_USAGE_OR_ARGUMENT_ERROR,
+        13 => DiagnosticClass.CLI_PROVIDER_OR_STARTUP_FAILURE,
+        14 => DiagnosticClass.CLI_INTERNAL_OUTPUT_FAILURE,
+        20 or 21 => DiagnosticClass.CLI_INTEGRITY_OR_PATH_FAILURE,
+        0 or 10 or 11 or 12 => DiagnosticClass.CLI_EXITED_WITHOUT_FINAL_RESULT,
+        _ => DiagnosticClass.UNKNOWN_CHILD_FAILURE
+    };
 
     private static string? VerifiedPackage(CliSummary summary)
     {
@@ -123,14 +194,6 @@ public static class ResultMapper
         }
 
         return "The CLI returned exit code 0 without a package reference.";
-    }
-
-    private static string ExitFailure(int exitCode, string stderr)
-    {
-        string detail = string.IsNullOrWhiteSpace(stderr)
-            ? $"The CLI returned unexpected exit code {exitCode}."
-            : stderr;
-        return BoundedDetail(detail);
     }
 
     private static string ExitRunStateFailure(int exitCode, string runState)
