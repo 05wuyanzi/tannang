@@ -74,6 +74,9 @@ The pre-alpha implementation currently provides:
 - a thin native WinForms GUI over the existing CLI child-process boundary,
   with child-driven runtime observability and bounded child-process failure
   diagnostics;
+- a deterministic repository-native portable Windows GUI bundle builder with
+  self-contained `win-x64` runtime provenance and bundled redistribution
+  license/notice material;
 - a synthetic-compatible FirstStage orchestration contract plus a fixed
   real-provider FirstStage path with explicit per-request accounting;
 - an embedded Synthetic Provider with end-to-end fixtures;
@@ -167,14 +170,29 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-window
 default `RC` mode requires a clean worktree and empty index, and fails if the
 built identity is unknown or modified. The `RC` mode output is specifically a
 CLI portable-headless artifact: it is not the GUI bundle, a released RC, a
-supported Windows matrix, or a production-readiness claim. The current feature
-also includes a thin native WinForms GUI over the existing CLI child-process
-boundary, with child-driven runtime observability and bounded child-process
-failure diagnostics. One controlled human-operated portable GUI end-to-end
-acceptance has passed for the `PROCESS_IDENTITY_SNAPSHOT` protected scope; the
-run reached `COMPLETE` and its resulting Evidence Package was independently
-verified. This single bounded acceptance result does not establish a general
-Windows support matrix, M5 completion, RC readiness, or production readiness.
+supported Windows matrix, or a production-readiness claim.
+
+The repository-native GUI bundle builder composes that headless CLI artifact
+with the thin WinForms GUI and the required self-contained Windows desktop
+runtime material into a new external directory:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-windows-gui-amd64.ps1 `
+  -OutputDirectory C:\absolute\new\tannang-gui-portable -Mode Development
+```
+
+Its `RC` mode records a clean, known source identity; `Development` mode is
+explicitly allowed to record a modified checkout. The bundle is portable and
+offline-oriented after dependencies are available, but this builder mode is
+not itself a released RC or a production-readiness claim. One exact merged-dev
+RC-mode candidate at revision
+`82139012116a434cc050b4cdc4e6771db8e0d309` completed a human-operated elevated
+Windows amd64 GUI end-to-end acceptance for the protected
+`PROCESS_IDENTITY_SNAPSHOT` scope; the GUI reached `COMPLETE` and independent
+package verification passed. See
+[`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md). This
+single bounded result does not establish a general Windows support matrix,
+M5 completion, RC readiness, or production readiness.
 
 Initial sanitized Windows amd64 evidence is recorded in
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md). Revision
@@ -259,6 +277,9 @@ and [Windows path safety v0](docs/architecture/windows-path-safety.md).
 
 ```yaml
 supported_windows_matrix: initial_evidence_available
+m5_bounded_acceptance: complete
+portable_gui_bundle_builder: true
+portable_gui_exact_acceptance: true
 real_windows_provider: true
 real_collection: true
 real_collection_scope: PROCESS_IDENTITY_SNAPSHOT
@@ -267,6 +288,7 @@ protected_baseline_activation: true
 production_package_adapter: false
 cli_real_provider_activation: true
 active_trace: false
+rc_ready: false
 production_ready: false
 forensic_certification: none
 judicial_validation: none
@@ -300,14 +322,15 @@ M4 Minimum Useful Baseline is complete on `dev` with the existing protected
 additional real capabilities are future additive expansion, not prerequisites
 for M4 completion.
 
-The next product stage is M5 MVP RC. Its bounded focus is productizing the
-existing `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI` for portable,
-offline-first execution and operator-facing workflow while establishing
-supported Windows matrix evidence. The current feature candidate contains the
-thin native WinForms GUI over the existing CLI child-process boundary,
-child-driven runtime observability, and bounded child-process failure
-diagnostics. These remain roadmap work toward M5; the candidate is not
-M5-complete or an RC, and `production_ready` remains false. TUI remains HOLD.
+The bounded M5 productization milestone is complete for its deliberately narrow
+scope: the `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI`, deterministic
+portable GUI bundle builder, child-process observability and bounded failure
+diagnostics are integrated, and one exact merged-dev GUI candidate passed the
+acceptance contract recorded in
+[`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md).
+This does not constitute a released RC, a general supported Windows family
+matrix, or production readiness; `RC_READY=false` and `production_ready=false`
+remain explicit. TUI remains HOLD.
 
 The current path baseline does not claim resistance to privileged concurrent
 namespace races, and this pre-alpha repository remains non-production.
