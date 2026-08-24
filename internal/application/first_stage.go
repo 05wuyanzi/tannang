@@ -166,6 +166,8 @@ type FirstStage struct {
 	realMode               bool
 	streamingRunner        provider.StreamingRunner
 	streamingDescriptor    provider.Descriptor
+	fileRunners            map[string]provider.FileArtifactRunner
+	availabilityProbers    map[string]provider.AvailabilityProber
 	packageFactory         firstStagePackageFactory
 	runtimeSink            RuntimeEventSink
 }
@@ -377,10 +379,11 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 		}
 
 		s.emitRuntime(RuntimeEvent{Type: RuntimeTypePhase, Event: RuntimeEventResolution})
+		decisionDescriptors := s.descriptorsForRun(ctx, target, record.Capability.ID)
 		decision, resolveErr := s.resolve(
 			*record.Capability,
 			target.Clone(),
-			cloneDescriptors(s.descriptors),
+			decisionDescriptors,
 			s.resolverPolicy,
 		)
 		if resolveErr == nil {
@@ -419,9 +422,15 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 		}
 		if s.realMode {
 			s.emitRuntime(RuntimeEvent{Type: RuntimeTypePhase, Event: RuntimeEventCollection})
-			if err := s.runRealSelected(ctx, collection, target, record, &realSession, &cancelled); err != nil {
+			var runErr error
+			if runner, ok := s.fileRunners[record.Request.ID]; ok {
+				runErr = s.runRealFileSelected(ctx, collection, target, record, runner, &realSession, &cancelled)
+			} else {
+				runErr = s.runRealSelected(ctx, collection, target, record, &realSession, &cancelled)
+			}
+			if runErr != nil {
 				if packageFailureErr == nil {
-					packageFailureErr = err
+					packageFailureErr = runErr
 				}
 			}
 			continue
@@ -1005,6 +1014,56 @@ func cloneDescriptors(descriptors []provider.Descriptor) []provider.Descriptor {
 		clones[index] = cloneDescriptor(descriptor)
 	}
 	return clones
+}
+
+// descriptorsForRun applies only the trusted run-scoped availability probes
+// needed by real artifact bindings. Static platform gates are checked first so
+// non-Windows targets never invoke Windows APIs.
+func (s *FirstStage) descriptorsForRun(ctx context.Context, target fingerprint.TargetFingerprint, capabilityID string) []provider.Descriptor {
+	descriptors := cloneDescriptors(s.descriptors)
+	probe, ok := s.availabilityProbers[capabilityID]
+	if !ok || probe == nil {
+		return descriptors
+	}
+	for index := range descriptors {
+		descriptor := &descriptors[index]
+		if !descriptor.Supports(capabilityID) || !staticDescriptorMatches(*descriptor, target) {
+			continue
+		}
+		reason, err := probe.Probe(ctx, target)
+		if err != nil && reason == execution.ReasonNone {
+			reason = execution.ReasonProviderError
+		}
+		if reason == execution.ReasonNone && err == nil {
+			descriptor.Requirements.Available = true
+			descriptor.Requirements.AvailabilityReason = execution.ReasonNone
+		} else {
+			if !reason.Valid() {
+				reason = execution.ReasonProviderError
+			}
+			descriptor.Requirements.Available = false
+			descriptor.Requirements.AvailabilityReason = reason
+		}
+	}
+	return descriptors
+}
+
+func staticDescriptorMatches(descriptor provider.Descriptor, target fingerprint.TargetFingerprint) bool {
+	match := func(values []string, observed string) bool {
+		if len(values) == 0 {
+			return true
+		}
+		for _, value := range values {
+			if strings.EqualFold(value, observed) {
+				return true
+			}
+		}
+		return false
+	}
+	return match(descriptor.Requirements.Platforms, target.Platform) &&
+		match(descriptor.Requirements.OSFamilies, target.OSFamily) &&
+		match(descriptor.Requirements.Architectures, target.Architecture) &&
+		match(descriptor.Requirements.RuntimeLanes, target.RuntimeLane)
 }
 
 func cloneDescriptor(descriptor provider.Descriptor) provider.Descriptor {

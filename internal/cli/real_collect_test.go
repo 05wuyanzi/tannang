@@ -184,6 +184,25 @@ func TestNormalCollectAcceptsOptionalCaseID(t *testing.T) {
 	}
 }
 
+func TestEventLogSupplementFlagIsFixedAndAdditive(t *testing.T) {
+	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
+	defer restore()
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--windows-event-log-system", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitOK || len(stage.request.Supplemental) != 1 || stage.request.Supplemental[0].ID != capability.WindowsEventLogSystemChannelID || stage.request.Supplemental[0].Protected {
+		t.Fatalf("code=%d request=%+v stderr=%s", code, stage.request, stderr.String())
+	}
+}
+
+func TestEventLogSupplementCannotUseSyntheticMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--synthetic", "available-collected", "--windows-event-log-system", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitUsage {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+}
+
 func TestExplicitProcessFlagConfirmsBaselineWithoutDuplication(t *testing.T) {
 	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
 	factoryCalls := 0

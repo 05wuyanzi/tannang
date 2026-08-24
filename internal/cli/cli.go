@@ -16,6 +16,7 @@ import (
 
 	"github.com/05wuyanzi/tannang/internal/application"
 	"github.com/05wuyanzi/tannang/internal/buildinfo"
+	"github.com/05wuyanzi/tannang/internal/capability"
 	"github.com/05wuyanzi/tannang/internal/evidence"
 	"github.com/05wuyanzi/tannang/internal/execution"
 	"github.com/05wuyanzi/tannang/internal/integrity"
@@ -34,11 +35,11 @@ type realFirstStageRuntimeFactory func(application.RuntimeEventSink) (realFirstS
 // newRealFirstStage is package-private so CLI tests can exercise terminal
 // accounting without invoking the accepted Windows Provider.
 var newRealFirstStage realFirstStageFactory = func() (realFirstStage, error) {
-	return application.NewProcessIdentitySnapshotFirstStage(realFirstStageFinalizationTimeout)
+	return application.NewProcessIdentitySnapshotAndEventLogFirstStage(realFirstStageFinalizationTimeout)
 }
 
 var newRealFirstStageWithRuntimeSink realFirstStageRuntimeFactory = func(sink application.RuntimeEventSink) (realFirstStage, error) {
-	return application.NewProcessIdentitySnapshotFirstStageWithRuntimeSink(realFirstStageFinalizationTimeout, sink)
+	return application.NewProcessIdentitySnapshotAndEventLogFirstStageWithRuntimeSink(realFirstStageFinalizationTimeout, sink)
 }
 
 const (
@@ -93,6 +94,7 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	flags.SetOutput(stderr)
 	fixture := flags.String("synthetic", "", "embedded synthetic fixture name")
 	realSnapshot := flags.Bool("process-identity-snapshot", false, "collect the fixed Windows process identity snapshot")
+	eventLogSystem := flags.Bool("windows-event-log-system", false, "collect the fixed local Windows System Event Log channel")
 	output := flags.String("output", "", "new absolute local evidence package directory")
 	caseID := flags.String("case-id", "", "optional case identifier for real collection")
 	runtimeStatus := flags.Bool("runtime-status-stderr", false, "emit bounded runtime status records to stderr")
@@ -101,6 +103,7 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	}
 	fixtureSelected := false
 	realSnapshotSelected := false
+	eventLogSelected := false
 	caseIDSelected := false
 	runtimeStatusSelected := false
 	flags.Visit(func(option *flag.Flag) {
@@ -109,6 +112,8 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			fixtureSelected = true
 		case "process-identity-snapshot":
 			realSnapshotSelected = true
+		case "windows-event-log-system":
+			eventLogSelected = true
 		case "case-id":
 			caseIDSelected = true
 		case "runtime-status-stderr":
@@ -116,8 +121,8 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		}
 	})
 	if flags.NArg() != 0 || *output == "" ||
-		(fixtureSelected && (*fixture == "" || realSnapshotSelected || caseIDSelected || runtimeStatusSelected)) ||
-		(realSnapshotSelected && !*realSnapshot) || (runtimeStatusSelected && !*runtimeStatus) {
+		(fixtureSelected && (*fixture == "" || realSnapshotSelected || eventLogSelected || caseIDSelected || runtimeStatusSelected)) ||
+		(realSnapshotSelected && !*realSnapshot) || (eventLogSelected && !*eventLogSystem) || (runtimeStatusSelected && !*runtimeStatus) {
 		fmt.Fprintln(stderr, "collect requires --output; the protected process identity baseline is the default, --process-identity-snapshot confirms that baseline, and --synthetic cannot be combined with real-only flags")
 		return ExitUsage
 	}
@@ -149,7 +154,11 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			return ExitProviderError
 		}
 	}
-	return runRealCollect(ctx, *output, *caseID, stdout, stderr, *runtimeStatus)
+	var supplemental []capability.CapabilityRequest
+	if eventLogSelected {
+		supplemental = []capability.CapabilityRequest{{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityLate, Protected: false}}
+	}
+	return runRealCollect(ctx, *output, *caseID, supplemental, stdout, stderr, *runtimeStatus)
 }
 
 type realCollectCapabilitySummary struct {
@@ -174,7 +183,7 @@ type realCollectSummary struct {
 	Capabilities         []realCollectCapabilitySummary  `json:"capabilities"`
 }
 
-func runRealCollect(ctx context.Context, output, caseID string, stdout, stderr io.Writer, runtimeStatus bool) int {
+func runRealCollect(ctx context.Context, output, caseID string, supplemental []capability.CapabilityRequest, stdout, stderr io.Writer, runtimeStatus bool) int {
 	diagnosticWriter := stderr
 	var arbiter *stderrArbiter
 	if runtimeStatus {
@@ -182,7 +191,7 @@ func runRealCollect(ctx context.Context, output, caseID string, stdout, stderr i
 		diagnosticWriter = arbiter
 		defer arbiter.Stop()
 	}
-	request := application.RunRequest{CaseID: caseID, OutputDestination: output}
+	request := application.RunRequest{CaseID: caseID, OutputDestination: output, Supplemental: supplemental}
 	if err := request.Validate(); err != nil {
 		fmt.Fprintln(diagnosticWriter, "invalid real collection request")
 		return ExitUsage
@@ -279,24 +288,33 @@ func realCollectExitCode(result application.RunResult) int {
 	if !result.FinalizationVerified {
 		return ExitIntegrity
 	}
-	if len(result.Records) != 1 {
+	if len(result.Records) == 0 {
 		return ExitProviderError
 	}
-	switch result.Records[0].Execution.State {
-	case execution.Collected:
-		if result.State == application.RunComplete {
-			return ExitOK
+	if result.State == application.RunComplete {
+		return ExitOK
+	}
+	priority := ExitPartial
+	for _, record := range result.Records {
+		switch record.Execution.State {
+		case execution.Failed:
+			return ExitProviderError
+		case execution.Blocked:
+			priority = ExitBlocked
+		case execution.Skipped:
+			if priority == ExitPartial {
+				priority = ExitSkipped
+			}
+		case execution.Partial:
+			if priority == ExitSkipped {
+				priority = ExitPartial
+			}
+		case execution.Collected:
+		default:
+			return ExitProviderError
 		}
-		return ExitPartial
-	case execution.Partial:
-		return ExitPartial
-	case execution.Skipped:
-		return ExitSkipped
-	case execution.Blocked:
-		return ExitBlocked
-	default:
-		return ExitProviderError
 	}
+	return priority
 }
 
 func runVerify(args []string, stdout, stderr io.Writer) int {
@@ -322,6 +340,7 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "Tannang pre-alpha CLI")
 	fmt.Fprintln(writer, "  tannang collect --output <new-absolute-local-directory> [--case-id <case-id>] [--runtime-status-stderr]")
 	fmt.Fprintln(writer, "  tannang collect --process-identity-snapshot --output <new-absolute-local-directory> [--case-id <case-id>] [--runtime-status-stderr]")
+	fmt.Fprintln(writer, "  tannang collect --windows-event-log-system --output <new-absolute-local-directory> [--case-id <case-id>] [--runtime-status-stderr]")
 	fmt.Fprintln(writer, "  tannang collect --synthetic <fixture> --output <new-absolute-local-directory>")
 	fmt.Fprintln(writer, "  tannang verify <absolute-local-package-directory>")
 	fmt.Fprintln(writer, "  tannang version")

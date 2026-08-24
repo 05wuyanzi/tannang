@@ -201,6 +201,30 @@ func TestFirstStageBuildProductVersionFormsRemainValid(t *testing.T) {
 	}
 }
 
+func TestFirstStageMultiEventLogReceiptAndMetadataValidate(t *testing.T) {
+	record := validFirstStageReceipt()
+	definition := capability.WindowsEventLogSystemChannel()
+	reason := execution.ReasonNone
+	record.SchemaVersion = FirstStageMultiSchemaVersion
+	record.RuntimeArtifact = FirstStageMultiRuntimeArtifact
+	record.RequestedCapability = capability.CapabilityRequest{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityLate, Protected: false}
+	record.Capability = &definition
+	record.SelectedProvider = &ProviderIdentity{ID: "windows-wevtapi-system-channel", Class: provider.FirstPartyNative}
+	record.CompatibilityReason = &reason
+	record.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: "windows-wevtapi-system-channel", Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true}}
+	record.ArtifactReference = &ArtifactReference{Path: WindowsEventLogSystemArtifactPath, MediaType: WindowsEventLogSystemArtifactMedia, ContentSchemaID: WindowsEventLogSystemArtifactSchema, RawOrDerived: "RAW", Size: 16, SHA256: strings.Repeat("b", 64)}
+	if err := record.Validate(); err != nil {
+		t.Fatalf("multi Event Log receipt rejected: %v", err)
+	}
+	metadata := validFirstStagePackageMetadata(record)
+	metadata.SchemaVersion = FirstStageMultiSchemaVersion
+	metadata.RuntimeArtifact = FirstStageMultiRuntimeArtifact
+	metadata.ArtifactReferences = []ArtifactReference{*record.ArtifactReference}
+	if err := metadata.Validate(); err != nil {
+		t.Fatalf("multi Event Log metadata rejected: %v", err)
+	}
+}
+
 func validFirstStagePackageMetadata(record FirstStageRecord) FirstStagePackageMetadata {
 	return FirstStagePackageMetadata{
 		SchemaVersion: SchemaVersion, ManifestVersion: ManifestVersion, ProductVersion: ProductVersion, RuntimeArtifact: FirstStageRuntimeArtifact,

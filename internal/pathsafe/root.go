@@ -145,6 +145,29 @@ func (r *OutputRoot) CreateFile(relative string, perm fs.FileMode) (*os.File, er
 	return file, nil
 }
 
+// ReserveFilePath validates a fresh package-relative child without creating
+// it. It is used only by native Providers whose documented export API owns the
+// file creation operation.
+func (r *OutputRoot) ReserveFilePath(relative string) (string, error) {
+	if r == nil || r.complete {
+		return "", reject(CodeUnsafePath, "reserve package file", "output root is unavailable for staging")
+	}
+	return prepareNewChild(r.path, relative, "reserve package file")
+}
+
+// ValidateExistingFile revalidates a caller-owned export target as an ordinary
+// non-reparse file beneath this protected root.
+func (r *OutputRoot) ValidateExistingFile(relative string) error {
+	if r == nil || r.complete {
+		return reject(CodeUnsafePath, "validate package file", "output root is unavailable for staging")
+	}
+	full, err := prepareExistingChild(r.path, relative, "validate package file")
+	if err != nil {
+		return err
+	}
+	return validateExistingRegularFile(full, "validate package file")
+}
+
 // RemoveFile removes exactly one guarded package-relative regular file. A
 // safely verified absent target is already in the desired terminal state.
 func (r *OutputRoot) RemoveFile(relative string) error {

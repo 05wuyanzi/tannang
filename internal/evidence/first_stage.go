@@ -11,6 +11,7 @@ import (
 	"io"
 	"sync"
 
+	"github.com/05wuyanzi/tannang/internal/capability"
 	"github.com/05wuyanzi/tannang/internal/integrity"
 	"github.com/05wuyanzi/tannang/internal/pathsafe"
 	"github.com/05wuyanzi/tannang/internal/receipt"
@@ -40,6 +41,19 @@ type FirstStagePackageSession struct {
 	abortError       error
 	residualPossible bool
 	published        bool
+	multiArtifacts   map[string]*namedArtifactState
+}
+
+type namedArtifactState struct {
+	relative        string
+	mode            string
+	file            *osFileAdapter
+	reserved        bool
+	sealed          bool
+	retained        bool
+	removeAttempted bool
+	removed         bool
+	sealError       error
 }
 
 // osFileAdapter keeps the application seam limited to io.Writer while the
@@ -84,6 +98,7 @@ func BeginFirstStagePackage(ctx context.Context, output string) (*FirstStagePack
 			return session, session.beginError
 		}
 	}
+	session.multiArtifacts = make(map[string]*namedArtifactState)
 	return session, nil
 }
 
@@ -115,6 +130,151 @@ func (s *FirstStagePackageSession) OpenArtifact() (io.Writer, error) {
 	}
 	s.artifact = &osFileAdapter{file: file}
 	return s.artifact, nil
+}
+
+func namedArtifactPath(capabilityID string) (string, string, error) {
+	switch capabilityID {
+	case capability.ProcessIdentitySnapshotID:
+		return receipt.FirstStageArtifactPath, "stream", nil
+	case capability.WindowsEventLogSystemChannelID:
+		return receipt.WindowsEventLogSystemArtifactPath, "file", nil
+	default:
+		return "", "", errors.New("unsupported real artifact capability")
+	}
+}
+
+// OpenStreamingArtifact creates a named streaming artifact for the known
+// process capability.
+func (s *FirstStagePackageSession) OpenStreamingArtifact(capabilityID string) (io.Writer, error) {
+	if s == nil {
+		return nil, errors.New("first-stage package session is nil")
+	}
+	relative, mode, err := namedArtifactPath(capabilityID)
+	if err != nil || mode != "stream" {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.multiArtifacts == nil {
+		s.multiArtifacts = make(map[string]*namedArtifactState)
+	}
+	if _, exists := s.multiArtifacts[capabilityID]; exists {
+		return nil, errors.New("named artifact Open was already attempted")
+	}
+	file, err := s.root.CreateFile(relative, 0o600)
+	if err != nil {
+		return nil, err
+	}
+	state := &namedArtifactState{relative: relative, mode: mode, file: &osFileAdapter{file: file}}
+	s.multiArtifacts[capabilityID] = state
+	return state.file, nil
+}
+
+// ReserveFileArtifactPath validates a fresh target without pre-creating it.
+func (s *FirstStagePackageSession) ReserveFileArtifactPath(capabilityID string) (string, error) {
+	if s == nil {
+		return "", errors.New("first-stage package session is nil")
+	}
+	relative, mode, err := namedArtifactPath(capabilityID)
+	if err != nil || mode != "file" {
+		return "", err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.multiArtifacts == nil {
+		s.multiArtifacts = make(map[string]*namedArtifactState)
+	}
+	if _, exists := s.multiArtifacts[capabilityID]; exists {
+		return "", errors.New("named artifact reservation was already attempted")
+	}
+	if s.beginError != nil {
+		return "", s.beginError
+	}
+	full, err := s.root.ReserveFilePath(relative)
+	if err != nil {
+		return "", err
+	}
+	s.multiArtifacts[capabilityID] = &namedArtifactState{relative: relative, mode: mode, reserved: true}
+	return full, nil
+}
+
+func (s *FirstStagePackageSession) ValidateFileArtifact(capabilityID string) error {
+	if s == nil {
+		return errors.New("first-stage package session is nil")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, ok := s.multiArtifacts[capabilityID]
+	if !ok || state.mode != "file" || !state.reserved || state.sealed {
+		return errors.New("file artifact is not reserved")
+	}
+	return s.root.ValidateExistingFile(state.relative)
+}
+
+func (s *FirstStagePackageSession) SealNamedArtifact(capabilityID string, retain bool) error {
+	if s == nil {
+		return errors.New("first-stage package session is nil")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, ok := s.multiArtifacts[capabilityID]
+	if !ok {
+		return errors.New("named artifact was not opened or reserved")
+	}
+	if state.sealed {
+		if state.retained == retain {
+			return state.sealError
+		}
+		return errors.New("named artifact disposition was already fixed")
+	}
+	state.sealed, state.retained = true, retain
+	if state.mode == "stream" {
+		var syncErr, closeErr error
+		if retain && state.file != nil && state.file.file != nil {
+			syncErr = state.file.file.Sync()
+		}
+		if state.file != nil && state.file.file != nil {
+			closeErr = state.file.file.Close()
+			if closeErr == nil {
+				state.file.file = nil
+			}
+		}
+		if !retain {
+			state.removeAttempted = true
+			removeErr := s.root.RemoveFile(state.relative)
+			if removeErr == nil {
+				state.removed = true
+			}
+			state.sealError = errors.Join(closeErr, removeErr)
+			return state.sealError
+		}
+		state.sealError = errors.Join(syncErr, closeErr)
+		return state.sealError
+	}
+	if retain {
+		state.sealError = s.root.ValidateExistingFile(state.relative)
+		return state.sealError
+	}
+	state.removeAttempted = true
+	removeErr := s.root.RemoveFile(state.relative)
+	if removeErr == nil {
+		state.removed = true
+	}
+	state.sealError = removeErr
+	return state.sealError
+}
+
+func (s *FirstStagePackageSession) HashNamedArtifact(capabilityID string) (integrity.Entry, error) {
+	if s == nil {
+		return integrity.Entry{}, errors.New("first-stage package session is nil")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	state, ok := s.multiArtifacts[capabilityID]
+	if !ok || !state.sealed || !state.retained || state.sealError != nil {
+		return integrity.Entry{}, errors.New("named artifact is not a successfully retained file")
+	}
+	return integrity.HashFile(s.root.Path(), state.relative)
 }
 
 // SealArtifact applies the retain/discard state machine exactly once.
@@ -204,6 +364,11 @@ func (s *FirstStagePackageSession) Finalize(ctx context.Context, metadata receip
 	if s.openAttempted && (!s.sealed || s.sealError != nil) {
 		return errors.New("first-stage artifact disposition is incomplete")
 	}
+	for _, state := range s.multiArtifacts {
+		if !state.sealed || state.sealError != nil {
+			return errors.New("named artifact disposition is incomplete")
+		}
+	}
 	metadata.DirectoryLayout = append([]string(nil), directoryLayout...)
 	if err := metadata.Validate(); err != nil {
 		return fmt.Errorf("validate first-stage package metadata: %w", err)
@@ -277,6 +442,18 @@ func (s *FirstStagePackageSession) Abort() error {
 		return nil
 	}
 	var cleanupErr error
+	for _, state := range s.multiArtifacts {
+		if !state.sealed {
+			if state.mode == "stream" && state.file != nil && state.file.file != nil {
+				_ = state.file.file.Close()
+				state.file.file = nil
+			}
+			if err := s.root.RemoveFile(state.relative); err != nil {
+				cleanupErr = errors.Join(cleanupErr, err)
+			}
+			state.sealed = true
+		}
+	}
 	if !s.sealed && s.artifact != nil {
 		cleanupErr = s.sealArtifactLocked(false)
 	}

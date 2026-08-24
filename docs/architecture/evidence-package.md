@@ -1,4 +1,4 @@
-# Evidence package v0
+# Evidence package v0 and FirstStage v1.1 multi-artifact extension
 
 Every package has this fixed top-level layout:
 
@@ -42,8 +42,8 @@ execution authority and does not invoke another capability.
 
 ## FirstStage finalization seam
 
-The library-only FirstStage contract does not redesign this package or call a
-new production package builder. Its application-owned Finalizer seam describes
+The library-only synthetic FirstStage contract does not redesign this package.
+Its application-owned Finalizer seam describes
 only the outcome FirstStage must validate: verification status, an opaque
 package reference, exactly one receipt reference per accepted request, and an
 optional artifact reference per request.
@@ -51,8 +51,9 @@ optional artifact reference per request.
 Synthetic orchestration tests use fake Finalizers and require no filesystem
 materialization. The seam does not define artifact bytes, paths, readers,
 streams, workspaces, package layout, or hashing. `evidence.Create` remains the
-single-capability synthetic implementation above. A production
-multi-capability adapter remains deferred to a later reviewed Gate.
+single-capability synthetic implementation above. The fixed real FirstStage
+binding adds a bounded v1.1 package shape for at most the two known real
+artifacts; it is not a generic workspace manager.
 
 ## Process identity snapshot writer boundary
 
@@ -71,20 +72,18 @@ complete rows, and the Provider does not claim physical rollback. Retainable
 complete NDJSON line.
 
 The immediate descriptor contains only media type `application/x-ndjson` and
-the per-record schema ID. It defines no RAW/DERIVED classification. A future
-package adapter, not the Provider, must own PATHSAFE staging, path choice,
+the per-record schema ID. It defines no RAW/DERIVED classification. The
+package adapter, not the Provider, owns PATHSAFE staging, path choice,
 close/flush, retain/discard enforcement, SHA-256, Artifact and Receipt
 references, Manifest creation, and publication. The bounded FirstStage
-candidate now implements that authority only for the single process-identity
-Capability; Provider output alone remains serialized observations, not a
-published Evidence Package artifact.
+candidate implements that authority for the process identity artifact and,
+when explicitly requested, the fixed System Event Log EVTX artifact; Provider
+output alone remains an unpublished observation or file.
 
-The bounded FirstStage candidate supplies that single-capability adapter for
-`PROCESS_IDENTITY_SNAPSHOT`: it writes `derived/process-identity-snapshot.ndjson`
-only after exclusive staging, retains only valid `COLLECTED`/`PARTIAL` output,
-publishes one Receipt per request, verifies the existing self-excluding
-SHA-256 Manifest, records package start/finish timestamps, and keeps the
-downstream handoff disabled. The underlying Provider and its benign real-host
-acceptance are already reviewed; this FirstStage adapter remains an
-implementation candidate pending independent review and real integration
-acceptance, not a production-readiness claim.
+The bounded FirstStage adapter keeps v0 process-only packages unchanged. An
+explicit `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` supplement uses v1.1 receipt/package
+semantics, reserves `raw/windows-event-log-system.evtx` inside the protected
+staging root, retains only a successfully exported ordinary file, publishes
+one receipt per accepted request, verifies the unchanged v1.0 SHA-256 Manifest,
+and keeps the downstream handoff disabled. The Event Log capability's benign
+real-host acceptance remains pending and is not a production-readiness claim.

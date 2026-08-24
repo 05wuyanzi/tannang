@@ -3,7 +3,8 @@
 Tannang is a Windows-first, platform-extensible evidence orchestration project.
 Normal CLI collection activates the existing fixed real
 FirstStage with one non-removable protected baseline capability:
-`PROCESS_IDENTITY_SNAPSHOT`. The explicit synthetic path remains separate and
+`PROCESS_IDENTITY_SNAPSHOT`. The fixed `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`
+capability is additive and remains outside the protected baseline. The explicit synthetic path remains separate and
 continues to prove the generic control path with embedded data:
 
 ```text
@@ -12,6 +13,9 @@ CLI --synthetic -> Capability -> Target Fingerprint -> Resolver -> Synthetic Pro
 
 CLI collect --output -> fixed PROCESS_IDENTITY_SNAPSHOT FirstStage
     -> Tool Help Provider -> Receipt + artifact -> Evidence Package verification
+
+CLI collect --windows-event-log-system -> fixed process baseline + System Event Log supplement
+    -> run-scoped wevtapi probe -> native EVTX artifact -> v1.1 receipts + manifest verification
 ```
 
 Capability and Provider are separate contracts. A user asks for evidence by
@@ -86,6 +90,27 @@ flag adds no supplemental request, so the single-capability package adapter
 still executes and records `PROCESS_IDENTITY_SNAPSHOT` exactly once. Default
 tests use fake acquisition and do not enumerate host processes.
 
+## Fixed System Event Log supplement
+
+`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` is a fixed additive Capability with
+`EXISTING_ARTIFACT_EXPORT` semantics. Its only production binding is the
+`FIRST_PARTY_NATIVE` Provider `windows-wevtapi-system-channel`, implemented
+with the documented `wevtapi.dll` `EvtOpenLog`/`EvtExportLog`/`EvtClose`
+procedures. The channel path is always `System`, the session is local and
+null, the query is null, and the target is the caller-owned protected staging
+path. No arbitrary channel, Event ID filter, remote session, subscription, or
+configuration-changing API is exposed.
+
+Before resolver selection, a run-scoped probe opens and closes the fixed
+channel without reading event contents. It reports only bounded availability
+reasons (`API_UNAVAILABLE`, `TARGET_STATE_RESTRICTED`, or
+`PRIVILEGE_REQUIRED`) through the cloned resolver descriptor. The export is
+retained as the opaque RAW artifact
+`raw/windows-event-log-system.evtx` with media type `application/x-evtx`.
+An empty but valid EVTX export is still `COLLECTED`; it is not an incident
+judgment. The supplemental request is mutually exclusive with `--synthetic`
+and does not change the protected process baseline.
+
 ## First-stage orchestration contract
 
 `internal/application.FirstStage` remains a library-owned orchestration contract.
@@ -120,20 +145,23 @@ prerequisites already succeeded.
 
 The synthetic Finalizer seam accepts copy-isolated accounting facts and returns
 only verification, package, receipt, and optional artifact references. It
-remains behaviorally unchanged and uses fakes in tests. There is still no
-generic multi-capability package adapter. Existing synthetic Payload remains
-fixture compatibility only; the process-snapshot Provider's caller-owned
-writer seam itself is not package authority.
+remains behaviorally unchanged and uses fakes in tests. The real production
+binding supports only the two known capability-keyed artifacts: process NDJSON
+and the fixed System-channel EVTX export. It is not a generic workspace or
+extraction framework. Existing synthetic Payload remains fixture compatibility
+only; Provider output itself is not package authority.
 
-The implementation supplies a private, fake-only test seam and a fixed
-production constructor for the single process-identity capability. Its package
-session owns one guarded staging tree, one optional derived NDJSON artifact,
+The implementation supplies private fake seams and fixed production bindings
+for the process baseline plus the additive System Event Log supplement. Its
+package session owns one guarded staging tree, up to the two known artifacts,
 receipts, manifest verification, and no-overwrite publication. The integrated
-activation makes that capability the normal CLI's sole protected baseline;
+activation makes process identity the normal CLI's sole protected baseline;
+the Event Log request is fixed and additive only;
 `--synthetic` bypasses the real factory, while the explicit real flag confirms
 the same baseline without duplication. The CLI returns a bounded health summary
 rather than a serialized `RunResult` or Provider payload. This remains
 `PUBLIC_PRE_ALPHA` and is not production ready. The intentionally narrow M4
-Minimum Useful Baseline is complete on `dev` with this one real capability;
-that is not a comprehensive capability, main integration, or release-completion
-claim.
+Minimum Useful Baseline is complete on `dev` with the process capability. The
+Event Log supplement is implemented but its independent benign Windows
+acceptance remains pending; neither state is a comprehensive capability,
+main-integration, or release-completion claim.
