@@ -62,12 +62,55 @@ so this row does not establish standard-user support. The raw Evidence Package
 and complete logs remain private. The evidence reference is an opaque ID, not
 a public path or a substitute for raw-evidence custody.
 
+## Portable GUI evidence row
+
+| Field | Value |
+| --- | --- |
+| Acceptance contract | `TANNANG_M5_GUI_WINDOWS_AMD64_ACCEPTANCE_V1` |
+| Evidence reference | `20260824T134206Z-M5-GUI-WINDOWS-AMD64-8213901` |
+| Validated at (UTC) | `2026-08-24T13:42:06Z` |
+| Host-reported product | `Microsoft Windows 11 专业工作站版` |
+| Edition ID | `ProfessionalWorkstation` |
+| Display version | `25H2` |
+| OS version | `10.0.26200` |
+| Build and UBR | `26200.8894` |
+| OS / process architecture | `X64 / X64` |
+| Elevation evidence | `HUMAN_ATTESTED_UAC_ELEVATED_GUI_LAUNCH` |
+| Source revision | `82139012116a434cc050b4cdc4e6771db8e0d309` |
+| Source tree | `d1c244120ec52903c1e47ad5e68ac75859426456` |
+| Artifact class | `PORTABLE_GUI_WINDOWS_AMD64` |
+| Build mode / modified | `RC / false` |
+| Runtime | `win-x64 / net10.0-windows / .NET 10.0.11 / self-contained` |
+| Collection scope | `PROCESS_IDENTITY_SNAPSHOT` |
+| Provider | `windows-toolhelp-process-snapshot` |
+| Compatibility | `AVAILABLE` |
+| Execution / degradation | `COLLECTED / NONE` |
+| GUI terminal state | `FINISHED: COMPLETE` |
+| Package manifest / verify | `PASS / PASS` |
+| Result | `TESTED_PASS` |
+
+Portable GUI artifact SHA-256 values:
+
+| File | SHA-256 |
+| --- | --- |
+| `Tannang.Gui.exe` | `711261df3877462dfc40a6b393fc9971d48697cd9b60dc1c3076ad984d5111e6` |
+| `tannang.exe` | `49cb85db644907e5711f6730290906311dcc136e55c1f17ae9bb745a59848780` |
+| `SHA256SUMS.txt` | `41a11af0dd033bb6304a5809cad4cb4c2084ae5452bc4c996d4e6e025729028d` |
+
+This row records one exact merged-dev RC-mode portable GUI acceptance for the
+protected `PROCESS_IDENTITY_SNAPSHOT` scope. It is additive to the headless
+row above and does not establish general Windows 10 or Windows 11 support,
+non-elevated support, x86 or arm64 real-host support, an installer, an RC
+publication, release readiness, or production readiness.
+
 ## Claim boundary
 
-The evidence supports only this statement: Tannang revision
+The evidence supports two bounded statements: revision
 `1d581a801c5546e7dd86cc9f41cfdc9051eb93a3` was validated as a portable Windows
-amd64 headless artifact on the exact environment above.
+amd64 headless artifact on the exact environment above, and revision
+`82139012116a434cc050b4cdc4e6771db8e0d309` was validated as a portable GUI
+Windows amd64 RC-mode candidate on the exact environment in the second row.
 
 It does not establish support for Windows 10 or Windows 11 generally, all
 modern or legacy Windows versions, x86, arm64, non-elevated execution, an
-installer, a GUI, RC publication, release readiness, or production readiness.
+installer, RC publication, release readiness, or production readiness.

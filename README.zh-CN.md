@@ -56,6 +56,8 @@ Pre-alpha 实现当前包括：
   caller-owned writer 边界及已评审的 benign Windows acceptance；
 - 位于现有 CLI 子进程边界之上的薄型原生 WinForms GUI，提供由子进程驱动的
   运行时可观测性和有界的子进程失败诊断；
+- 确定性的仓库内原生 Windows GUI 便携 bundle builder，提供自包含 `win-x64`
+  runtime provenance 以及随 bundle 携带的 runtime license/notice 材料；
 - 保持 synthetic 兼容的 FirstStage 编排合同，以及固定真实 Provider 路径和明确的
   逐请求记账；
 - 使用内嵌数据的 Synthetic Provider 和端到端 fixture；
@@ -140,11 +142,24 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-window
 `Development` 模式允许 dirty checkout，并将其诚实记录为 modified。默认 `RC` 模式要求
 worktree clean 且 index 为空；built identity 为 unknown 或 modified 时会失败。`RC` 模式
 输出明确是 CLI 的 portable headless 制品：它不是 GUI bundle、已发布 RC、受支持的
-Windows 矩阵或生产就绪声明。当前 feature 还包含位于现有 CLI 子进程边界之上的薄型原生
-WinForms GUI，提供由子进程驱动的运行时可观测性和有界的子进程失败诊断。一次受控、人工
-操作的 portable GUI 端到端验收已在 `PROCESS_IDENTITY_SNAPSHOT` 受保护范围内通过；该
-运行达到 `COMPLETE`，其结果 Evidence Package 已独立验证。该单次有界验收不代表通用
-Windows 支持矩阵、M5 完成、RC 就绪或生产就绪。
+Windows 矩阵或生产就绪声明。
+
+仓库内原生 GUI bundle builder 会把这个 headless CLI 制品与薄型 WinForms GUI 以及所需
+的 self-contained Windows desktop runtime 材料组合到新的仓库外目录：
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-windows-gui-amd64.ps1 `
+  -OutputDirectory C:\absolute\new\tannang-gui-portable -Mode Development
+```
+
+其 `RC` 模式记录 clean、可识别的源码身份；`Development` 模式明确允许记录 modified
+checkout。bundle 在依赖已具备后面向 portable、offline-first 使用，但 builder 的模式
+本身不是已发布 RC 或生产就绪声明。revision
+`82139012116a434cc050b4cdc4e6771db8e0d309` 的一个 exact merged-dev RC-mode candidate
+已完成一次人工 elevated Windows amd64 GUI 端到端验收，范围为受保护的
+`PROCESS_IDENTITY_SNAPSHOT`；GUI 达到 `COMPLETE`，独立 package verification 通过。详见
+[`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md)。这一单次有界结果
+不代表通用 Windows 支持矩阵、M5 完成、RC 就绪或生产就绪。
 
 首条脱敏 Windows amd64 evidence 已记录在
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md)。revision
@@ -223,6 +238,9 @@ reports/
 
 ```yaml
 supported_windows_matrix: initial_evidence_available
+m5_bounded_acceptance: complete
+portable_gui_bundle_builder: true
+portable_gui_exact_acceptance: true
 real_windows_provider: true
 real_collection: true
 real_collection_scope: PROCESS_IDENTITY_SNAPSHOT
@@ -231,6 +249,7 @@ protected_baseline_activation: true
 production_package_adapter: false
 cli_real_provider_activation: true
 active_trace: false
+rc_ready: false
 production_ready: false
 forensic_certification: none
 judicial_validation: none
@@ -257,12 +276,12 @@ M4 Minimum Useful Baseline 已在 `dev` 上通过现有受保护的
 `PROCESS_IDENTITY_SNAPSHOT` 完成。它刻意以一个真实 Capability 收口；额外真实
 Capability 属于未来增量扩展，并非完成 M4 的前提。
 
-下一产品阶段是 M5 MVP RC。其有界重点是将现有的
-`HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI` 产品化，用于可移植、offline-first
-执行和 operator-facing workflow，同时建立受支持 Windows 矩阵证据。当前 feature
-candidate 已包含位于现有 CLI 子进程边界之上的薄型原生 WinForms GUI、由子进程驱动的
-运行时可观测性和有界的子进程失败诊断。这些仍是面向 M5 的路线图工作；当前 candidate
-尚未完成 M5，也不是 RC，且 `production_ready` 仍为 false。TUI 保持 HOLD。
+刻意保持窄范围的 M5 productization milestone 已完成：
+`HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI`、确定性的便携 GUI bundle builder、
+子进程可观测性和有界失败诊断已集成，并且一个 exact merged-dev GUI candidate 已通过
+[`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md) 中的验收合同。
+这不等于已发布 RC、通用 Windows 家族支持矩阵或生产就绪；`RC_READY=false` 与
+`production_ready=false` 仍明确保持。TUI 保持 HOLD。
 
 当前路径基线不声称抵抗高权限进程并发替换 filesystem namespace；本 Pre-alpha 仓库仍
 不具备生产就绪性。
