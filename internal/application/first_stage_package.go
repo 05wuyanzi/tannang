@@ -89,7 +89,9 @@ func (s *FirstStage) runRealSelected(
 		return nil
 	}
 	record.Attempted = true
+	s.emitRuntime(RuntimeEvent{Type: RuntimeTypeActivity, Event: RuntimeEventProviderStarted})
 	executionResult := s.streamingRunner.ExecuteTo(ctx, *record.Capability, target.Clone(), sink)
+	s.emitRuntime(RuntimeEvent{Type: RuntimeTypeActivity, Event: RuntimeEventProviderFinished})
 	if validationErr := executionResult.Validate(); validationErr != nil {
 		executionResult = execution.Result{
 			State:             execution.Failed,
@@ -103,6 +105,9 @@ func (s *FirstStage) runRealSelected(
 	retain := executionResult.State == execution.Collected || executionResult.State == execution.Partial
 	if sealErr := (*session).SealArtifact(retain); sealErr != nil {
 		return fmt.Errorf("finalize first-stage artifact sink: %w", errors.Join(sealErr, (*session).Abort()))
+	}
+	if retain {
+		s.emitRuntime(RuntimeEvent{Type: RuntimeTypeActivity, Event: RuntimeEventArtifactSealed})
 	}
 	if ctx.Err() != nil && executionResult.State != execution.Collected {
 		*cancelled = true
