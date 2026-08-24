@@ -71,6 +71,9 @@ The pre-alpha implementation currently provides:
 - a fixed, library-only `PROCESS_IDENTITY_SNAPSHOT` Provider implementation
   with a synchronous caller-owned writer boundary and reviewed benign Windows
   acceptance;
+- a thin native WinForms GUI over the existing CLI child-process boundary,
+  with child-driven runtime observability and bounded child-process failure
+  diagnostics;
 - a synthetic-compatible FirstStage orchestration contract plus a fixed
   real-provider FirstStage path with explicit per-request accounting;
 - an embedded Synthetic Provider with end-to-end fixtures;
@@ -162,9 +165,16 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-window
 
 `Development` mode permits a dirty checkout and records it as modified. The
 default `RC` mode requires a clean worktree and empty index, and fails if the
-built identity is unknown or modified. This is an M5 build-provenance and
-portable-headless candidate, not a released RC, supported Windows matrix, GUI,
-or production-readiness claim. A thin native GUI is not implemented yet.
+built identity is unknown or modified. The `RC` mode output is specifically a
+CLI portable-headless artifact: it is not the GUI bundle, a released RC, a
+supported Windows matrix, or a production-readiness claim. The current feature
+also includes a thin native WinForms GUI over the existing CLI child-process
+boundary, with child-driven runtime observability and bounded child-process
+failure diagnostics. One controlled human-operated portable GUI end-to-end
+acceptance has passed for the `PROCESS_IDENTITY_SNAPSHOT` protected scope; the
+run reached `COMPLETE` and its resulting Evidence Package was independently
+verified. This single bounded acceptance result does not establish a general
+Windows support matrix, M5 completion, RC readiness, or production readiness.
 
 Initial sanitized Windows amd64 evidence is recorded in
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md). Revision
@@ -291,12 +301,13 @@ additional real capabilities are future additive expansion, not prerequisites
 for M4 completion.
 
 The next product stage is M5 MVP RC. Its bounded focus is productizing the
-already-working `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI` for portable,
-offline-first execution and operator-facing workflow, establishing supported
-Windows matrix evidence, and, where required by MVP scope, the thin native
-one-click GUI. The current M5 candidate begins only the headless build
-identity and portable artifact foundation. TUI remains HOLD. These are roadmap
-goals, not M5-complete or released-RC claims.
+existing `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI` for portable,
+offline-first execution and operator-facing workflow while establishing
+supported Windows matrix evidence. The current feature candidate contains the
+thin native WinForms GUI over the existing CLI child-process boundary,
+child-driven runtime observability, and bounded child-process failure
+diagnostics. These remain roadmap work toward M5; the candidate is not
+M5-complete or an RC, and `production_ready` remains false. TUI remains HOLD.
 
 The current path baseline does not claim resistance to privileged concurrent
 namespace races, and this pre-alpha repository remains non-production.

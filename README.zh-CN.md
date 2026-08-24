@@ -54,6 +54,8 @@ Pre-alpha 实现当前包括：
 - Provider 抽象与兼容性 Resolver；
 - 固定、仅供库使用的 `PROCESS_IDENTITY_SNAPSHOT` Provider 实现、同步的
   caller-owned writer 边界及已评审的 benign Windows acceptance；
+- 位于现有 CLI 子进程边界之上的薄型原生 WinForms GUI，提供由子进程驱动的
+  运行时可观测性和有界的子进程失败诊断；
 - 保持 synthetic 兼容的 FirstStage 编排合同，以及固定真实 Provider 路径和明确的
   逐请求记账；
 - 使用内嵌数据的 Synthetic Provider 和端到端 fixture；
@@ -136,9 +138,13 @@ powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-window
 ```
 
 `Development` 模式允许 dirty checkout，并将其诚实记录为 modified。默认 `RC` 模式要求
-worktree clean 且 index 为空；built identity 为 unknown 或 modified 时会失败。这只是 M5
-build provenance 与 portable headless candidate，不代表 RC 已发布、Windows 支持矩阵已
-建立、GUI 已实现或已具备生产就绪性。thin native GUI 尚未实现。
+worktree clean 且 index 为空；built identity 为 unknown 或 modified 时会失败。`RC` 模式
+输出明确是 CLI 的 portable headless 制品：它不是 GUI bundle、已发布 RC、受支持的
+Windows 矩阵或生产就绪声明。当前 feature 还包含位于现有 CLI 子进程边界之上的薄型原生
+WinForms GUI，提供由子进程驱动的运行时可观测性和有界的子进程失败诊断。一次受控、人工
+操作的 portable GUI 端到端验收已在 `PROCESS_IDENTITY_SNAPSHOT` 受保护范围内通过；该
+运行达到 `COMPLETE`，其结果 Evidence Package 已独立验证。该单次有界验收不代表通用
+Windows 支持矩阵、M5 完成、RC 就绪或生产就绪。
 
 首条脱敏 Windows amd64 evidence 已记录在
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md)。revision
@@ -251,11 +257,12 @@ M4 Minimum Useful Baseline 已在 `dev` 上通过现有受保护的
 `PROCESS_IDENTITY_SNAPSHOT` 完成。它刻意以一个真实 Capability 收口；额外真实
 Capability 属于未来增量扩展，并非完成 M4 的前提。
 
-下一产品阶段是 M5 MVP RC。其有界重点是将已经可工作的
+下一产品阶段是 M5 MVP RC。其有界重点是将现有的
 `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI` 产品化，用于可移植、offline-first
-执行和 operator-facing workflow，建立受支持 Windows 矩阵证据，并在 MVP scope 要求时
-提供 thin native one-click GUI。当前 M5 candidate 只开始建立 headless build identity
-与 portable artifact 基础。TUI 保持 HOLD。这些是路线图目标，不代表 M5 已完成或 RC 已发布。
+执行和 operator-facing workflow，同时建立受支持 Windows 矩阵证据。当前 feature
+candidate 已包含位于现有 CLI 子进程边界之上的薄型原生 WinForms GUI、由子进程驱动的
+运行时可观测性和有界的子进程失败诊断。这些仍是面向 M5 的路线图工作；当前 candidate
+尚未完成 M5，也不是 RC，且 `production_ready` 仍为 false。TUI 保持 HOLD。
 
 当前路径基线不声称抵抗高权限进程并发替换 filesystem namespace；本 Pre-alpha 仓库仍
 不具备生产就绪性。
