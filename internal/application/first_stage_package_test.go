@@ -331,14 +331,13 @@ func newRealHostTestStage(t *testing.T, process, host provider.StreamingRunner, 
 	return stage
 }
 
-func TestRealFirstStageHostSupplementUsesV12AndRetainsBaselineArtifacts(t *testing.T) {
+func TestRealFirstStageProtectedHostUsesV12AndRetainsBaselineArtifacts(t *testing.T) {
 	process := newFakeStreamingRunner()
 	host := newFakeHostStreamingRunner()
 	event := &acceptedFileArtifactRunner{}
 	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
 	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
 	request := realRunRequest(t)
-	request.Supplemental = []capability.CapabilityRequest{{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate}}
 	result, err := stage.Run(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -355,6 +354,11 @@ func TestRealFirstStageHostSupplementUsesV12AndRetainsBaselineArtifacts(t *testi
 	if host.calls != 1 || !session.hostRetained || !session.processRetained || !session.eventRetained {
 		t.Fatalf("retention host=%v process=%v event=%v calls=%d", session.hostRetained, session.processRetained, session.eventRetained, host.calls)
 	}
+	for _, record := range result.Records {
+		if record.Request.ID == capability.WindowsHostOSIdentitySnapshotID && !record.Request.Protected {
+			t.Fatalf("host request was not protected: %+v", record.Request)
+		}
+	}
 }
 
 func TestRealFirstStageHostFailurePreservesBaselineAndOmitsHostArtifact(t *testing.T) {
@@ -365,7 +369,6 @@ func TestRealFirstStageHostFailurePreservesBaselineAndOmitsHostArtifact(t *testi
 	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
 	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
 	request := realRunRequest(t)
-	request.Supplemental = []capability.CapabilityRequest{{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate}}
 	result, err := stage.Run(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)
@@ -380,13 +383,68 @@ func TestRealFirstStageHostFailurePreservesBaselineAndOmitsHostArtifact(t *testi
 				t.Fatalf("baseline record=%+v", record)
 			}
 		case capability.WindowsHostOSIdentitySnapshotID:
-			if record.Execution.State != execution.Failed || record.ArtifactReference != "" || len(record.MissingEvidence) == 0 {
+			if !record.Request.Protected || record.Execution.State != execution.Failed || record.ArtifactReference != "" || len(record.MissingEvidence) == 0 {
 				t.Fatalf("host record=%+v", record)
 			}
 		}
 	}
 	if len(session.metadata.ArtifactReferences) != 2 || session.hostRetained {
 		t.Fatalf("metadata=%+v hostRetained=%v", session.metadata, session.hostRetained)
+	}
+}
+
+func TestRealFirstStageProtectedHostUnavailablePreservesBaseline(t *testing.T) {
+	process := newFakeStreamingRunner()
+	host := newFakeHostStreamingRunner()
+	host.descriptor.Requirements.Available = false
+	host.descriptor.Requirements.AvailabilityReason = execution.ReasonAPIUnavailable
+	event := &acceptedFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
+	result, err := stage.Run(context.Background(), realRunRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunPartial || !result.FinalizationVerified || len(result.Records) != 3 {
+		t.Fatalf("result=%+v", result)
+	}
+	for _, record := range result.Records {
+		switch record.Request.ID {
+		case capability.ProcessIdentitySnapshotID, capability.WindowsEventLogSystemChannelID:
+			if record.Execution.State != execution.Collected || record.ArtifactReference == "" {
+				t.Fatalf("baseline record=%+v", record)
+			}
+		case capability.WindowsHostOSIdentitySnapshotID:
+			if !record.Request.Protected || record.Compatibility != execution.Unavailable || record.Execution.State != execution.Skipped || record.ArtifactReference != "" {
+				t.Fatalf("unavailable host record=%+v", record)
+			}
+		}
+	}
+	if len(session.metadata.ArtifactReferences) != 2 || session.hostRetained {
+		t.Fatalf("metadata=%+v hostRetained=%v", session.metadata, session.hostRetained)
+	}
+}
+
+func TestRealFirstStageProtectedHostBlockedPreservesBaseline(t *testing.T) {
+	process := newFakeStreamingRunner()
+	host := newFakeHostStreamingRunner()
+	host.result = execution.Result{State: execution.Blocked, Reason: execution.ReasonPrivilegeRequired, SideEffectSummary: "Fake host access was blocked."}
+	event := &acceptedFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
+	result, err := stage.Run(context.Background(), realRunRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunPartial || !result.FinalizationVerified || len(result.Records) != 3 {
+		t.Fatalf("result=%+v", result)
+	}
+	hostRecord := result.Records[2]
+	if hostRecord.Request.ID != capability.WindowsHostOSIdentitySnapshotID || !hostRecord.Request.Protected || hostRecord.Execution.State != execution.Blocked || hostRecord.Execution.Reason != execution.ReasonPrivilegeRequired || hostRecord.ArtifactReference != "" {
+		t.Fatalf("blocked host record=%+v", hostRecord)
+	}
+	if result.Records[0].Execution.State != execution.Collected || result.Records[1].Execution.State != execution.Collected || len(session.metadata.ArtifactReferences) != 2 || session.hostRetained {
+		t.Fatalf("baseline retention result=%+v metadata=%+v hostRetained=%v", result.Records, session.metadata, session.hostRetained)
 	}
 }
 
@@ -403,7 +461,6 @@ func TestRealFirstStageHostCancellationDiscardsHostArtifact(t *testing.T) {
 	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
 	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
 	request := realRunRequest(t)
-	request.Supplemental = []capability.CapabilityRequest{{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate}}
 	result, err := stage.Run(context.Background(), request)
 	if err != nil {
 		t.Fatal(err)

@@ -167,13 +167,13 @@ func TestNormalCollectActivatesProtectedBaselineWithoutCaseID(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
 		t.Fatalf("decode summary: %v", err)
 	}
-	if summary.CaseID != "" || len(summary.Capabilities) != 2 || summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID || !summary.Capabilities[0].Protected || summary.Capabilities[1].ID != capability.WindowsEventLogSystemChannelID || !summary.Capabilities[1].Protected {
+	if summary.CaseID != "" || len(summary.Capabilities) != 3 || summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID || !summary.Capabilities[0].Protected || summary.Capabilities[1].ID != capability.WindowsEventLogSystemChannelID || !summary.Capabilities[1].Protected || summary.Capabilities[2].ID != capability.WindowsHostOSIdentitySnapshotID || !summary.Capabilities[2].Protected {
 		t.Fatalf("summary=%+v", summary)
 	}
 }
 
 func TestNormalCollectAcceptsOptionalCaseID(t *testing.T) {
-	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+	stage := &fakeRealFirstStage{result: fakePromotedRealResult(application.RunComplete)}
 	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
 	defer restore()
 
@@ -184,18 +184,21 @@ func TestNormalCollectAcceptsOptionalCaseID(t *testing.T) {
 	}
 }
 
-func TestHostIdentityFlagAddsOnlyOneSupplementalRequest(t *testing.T) {
-	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+func TestHostIdentityFlagIsConfirmationOnlyAndIdempotent(t *testing.T) {
+	stage := &fakeRealFirstStage{result: fakePromotedRealResult(application.RunComplete)}
 	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
 	defer restore()
 	var stdout, stderr bytes.Buffer
 	code := Run(context.Background(), []string{"collect", "--windows-host-os-identity", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
-	if code != ExitOK || len(stage.request.Supplemental) != 1 {
+	if code != ExitOK || len(stage.request.Supplemental) != 0 {
 		t.Fatalf("code=%d request=%+v stderr=%s", code, stage.request, stderr.String())
 	}
-	request := stage.request.Supplemental[0]
-	if request.ID != capability.WindowsHostOSIdentitySnapshotID || request.Protected || request.Priority != capability.PriorityLate {
-		t.Fatalf("supplemental request=%+v", request)
+	var summary realCollectSummary
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if len(summary.Capabilities) != 3 || !summary.Capabilities[2].Protected || summary.Capabilities[2].ID != capability.WindowsHostOSIdentitySnapshotID {
+		t.Fatalf("summary=%+v", summary)
 	}
 }
 
@@ -212,7 +215,7 @@ func TestHostIdentityFlagRejectsExplicitFalseAndSyntheticMode(t *testing.T) {
 }
 
 func TestEventLogConfirmationFlagIsFixedAndIdempotent(t *testing.T) {
-	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+	stage := &fakeRealFirstStage{result: fakePromotedRealResult(application.RunComplete)}
 	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
 	defer restore()
 	var stdout, stderr bytes.Buffer
@@ -230,12 +233,12 @@ func TestEventLogConfirmationFlagRejectsExplicitFalse(t *testing.T) {
 	}
 }
 
-func TestBothRealConfirmationFlagsAreIdempotent(t *testing.T) {
-	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+func TestAllRealConfirmationFlagsAreIdempotent(t *testing.T) {
+	stage := &fakeRealFirstStage{result: fakePromotedRealResult(application.RunComplete)}
 	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
 	defer restore()
 	var stdout, stderr bytes.Buffer
-	code := Run(context.Background(), []string{"collect", "--process-identity-snapshot", "--windows-event-log-system", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	code := Run(context.Background(), []string{"collect", "--process-identity-snapshot", "--windows-event-log-system", "--windows-host-os-identity", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
 	if code != ExitOK || len(stage.request.Supplemental) != 0 {
 		t.Fatalf("code=%d request=%+v stderr=%s", code, stage.request, stderr.String())
 	}
@@ -255,7 +258,7 @@ func TestVerifiedPartialEventLogFailurePreservesBothCapabilitySummaries(t *testi
 	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
 		t.Fatalf("decode summary: %v", err)
 	}
-	if summary.RunState != application.RunPartial || !summary.FinalizationVerified || summary.PackageReference == "" || len(summary.Capabilities) != 2 {
+	if summary.RunState != application.RunPartial || !summary.FinalizationVerified || summary.PackageReference == "" || len(summary.Capabilities) != 3 {
 		t.Fatalf("summary=%+v", summary)
 	}
 	if summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID || summary.Capabilities[0].ExecutionState != execution.Collected || summary.Capabilities[0].ArtifactReference == "" {
@@ -264,18 +267,21 @@ func TestVerifiedPartialEventLogFailurePreservesBothCapabilitySummaries(t *testi
 	if summary.Capabilities[1].ID != capability.WindowsEventLogSystemChannelID || summary.Capabilities[1].ExecutionState != execution.Failed || summary.Capabilities[1].ArtifactReference != "" || len(summary.Capabilities[1].MissingEvidence) == 0 {
 		t.Fatalf("event summary=%+v", summary.Capabilities[1])
 	}
+	if summary.Capabilities[2].ID != capability.WindowsHostOSIdentitySnapshotID || !summary.Capabilities[2].Protected || summary.Capabilities[2].ExecutionState != execution.Collected {
+		t.Fatalf("host summary=%+v", summary.Capabilities[2])
+	}
 }
 
 func TestVerifiedPartialHostFailureUsesExitPartialAndPreservesPackage(t *testing.T) {
 	result := fakePromotedRealResult(application.RunPartial)
-	host := application.CapabilityRecord{
-		Request:       capability.CapabilityRequest{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate, Protected: false},
-		Compatibility: execution.Available, Attempted: true,
-		Execution:        execution.Result{State: execution.Failed, Reason: execution.ReasonProviderError, SideEffectSummary: "bounded host failure"},
-		MissingEvidence:  []string{"Host identity was not collected."},
-		ReceiptReference: "receipts/WINDOWS_HOST_OS_IDENTITY_SNAPSHOT.json",
-	}
-	result.Records = append(result.Records, host)
+	host := &result.Records[2]
+	host.Request = capability.CapabilityRequest{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate, Protected: true}
+	host.Compatibility = execution.Available
+	host.Attempted = true
+	host.Execution = execution.Result{State: execution.Failed, Reason: execution.ReasonProviderError, SideEffectSummary: "bounded host failure"}
+	host.MissingEvidence = []string{"Host identity was not collected."}
+	host.ReceiptReference = "receipts/WINDOWS_HOST_OS_IDENTITY_SNAPSHOT.json"
+	host.ArtifactReference = ""
 	stage := &fakeRealFirstStage{result: result}
 	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
 	defer restore()
@@ -291,7 +297,7 @@ func TestVerifiedPartialHostFailureUsesExitPartialAndPreservesPackage(t *testing
 	if summary.RunState != application.RunPartial || !summary.FinalizationVerified || summary.PackageReference == "" || len(summary.Capabilities) != 3 {
 		t.Fatalf("summary=%+v", summary)
 	}
-	if summary.Capabilities[2].ID != capability.WindowsHostOSIdentitySnapshotID || summary.Capabilities[2].ArtifactReference != "" || summary.Capabilities[2].ExecutionState != execution.Failed {
+	if summary.Capabilities[2].ID != capability.WindowsHostOSIdentitySnapshotID || !summary.Capabilities[2].Protected || summary.Capabilities[2].ArtifactReference != "" || summary.Capabilities[2].ExecutionState != execution.Failed {
 		t.Fatalf("host summary=%+v", summary.Capabilities[2])
 	}
 }
@@ -305,7 +311,7 @@ func TestEventLogSupplementCannotUseSyntheticMode(t *testing.T) {
 }
 
 func TestExplicitProcessFlagConfirmsBaselineWithoutDuplication(t *testing.T) {
-	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+	stage := &fakeRealFirstStage{result: fakePromotedRealResult(application.RunComplete)}
 	factoryCalls := 0
 	restore := replaceRealFactory(func() (realFirstStage, error) {
 		factoryCalls++
@@ -322,7 +328,7 @@ func TestExplicitProcessFlagConfirmsBaselineWithoutDuplication(t *testing.T) {
 		t.Fatalf("explicit flag added supplemental requests: %+v", stage.request.Supplemental)
 	}
 	var summary realCollectSummary
-	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil || len(summary.Capabilities) != 1 || summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID {
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil || len(summary.Capabilities) != 3 || summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID || !summary.Capabilities[2].Protected || summary.Capabilities[2].ID != capability.WindowsHostOSIdentitySnapshotID {
 		t.Fatalf("summary=%+v err=%v", summary, err)
 	}
 }
@@ -475,6 +481,15 @@ func fakePromotedRealResult(state application.RunState) application.RunResult {
 		ArtifactReference: "raw/windows-event-log-system.evtx",
 	}
 	process.Records = append(process.Records, event)
+	host := application.CapabilityRecord{
+		Request:           capability.CapabilityRequest{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate, Protected: true},
+		Compatibility:     execution.Available,
+		Attempted:         true,
+		Execution:         execution.Result{State: execution.Collected, Reason: execution.ReasonNone, SideEffectSummary: "bounded test result"},
+		ReceiptReference:  "receipts/WINDOWS_HOST_OS_IDENTITY_SNAPSHOT.json",
+		ArtifactReference: "derived/windows-host-os-identity.json",
+	}
+	process.Records = append(process.Records, host)
 	return process
 }
 

@@ -44,7 +44,12 @@ func TestFirstStageV2SchemasPinFixedCapabilityProviderAndArtifactSets(t *testing
 		then := branch["then"].(map[string]any)
 		properties := then["properties"].(map[string]any)
 		request := properties["requested_capability"].(map[string]any)["properties"].(map[string]any)
-		if request["protected"].(map[string]any)["const"].(bool) != (expected.protection == "true") {
+		protectedSchema := request["protected"].(map[string]any)
+		if expected.id == "WINDOWS_HOST_OS_IDENTITY_SNAPSHOT" {
+			if protectedSchema["type"] != "boolean" {
+				t.Fatalf("branch %d Host protection must be a boolean envelope: %#v", index, protectedSchema)
+			}
+		} else if protectedSchema["const"].(bool) != (expected.protection == "true") {
 			t.Fatalf("branch %d protection mismatch", index)
 		}
 		capabilityProperties := properties["capability"].(map[string]any)["properties"].(map[string]any)

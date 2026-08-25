@@ -815,13 +815,20 @@ func validateCollectionID(value string) error {
 
 func mergeRequests(baseline, supplemental []capability.CapabilityRequest) []capability.CapabilityRequest {
 	merged := make(map[string]capability.CapabilityRequest, len(baseline)+len(supplemental))
+	protectedBaselineIDs := make(map[string]struct{}, len(baseline))
 	for _, request := range baseline {
 		merged[request.ID] = request
+		if request.Protected {
+			protectedBaselineIDs[request.ID] = struct{}{}
+		}
 	}
 	for _, request := range supplemental {
 		existing, exists := merged[request.ID]
 		if !exists {
 			merged[request.ID] = request
+			continue
+		}
+		if _, protectedBaseline := protectedBaselineIDs[request.ID]; protectedBaseline {
 			continue
 		}
 		if request.Priority.Order() < existing.Priority.Order() {

@@ -17,7 +17,7 @@ internal static class TestRunner
         var tests = new (string Name, Action Test)[]
         {
             ("complete result maps to COMPLETE", CompleteResultMapsToComplete),
-            ("promoted baseline maps both protected capabilities", PromotedBaselineMapsBothProtectedCapabilities),
+            ("promoted baseline maps all protected capabilities", PromotedBaselineMapsAllProtectedCapabilities),
             ("unverified exit zero fails closed", UnverifiedExitZeroFailsClosed),
             ("missing package reference fails closed", MissingPackageReferenceFailsClosed),
             ("partial exit ten maps to PARTIAL", PartialExitTenMapsToPartial),
@@ -113,7 +113,7 @@ internal static class TestRunner
         AssertEqual(@"C:\\package", result.PackageReference);
     }
 
-    private static void PromotedBaselineMapsBothProtectedCapabilities()
+    private static void PromotedBaselineMapsAllProtectedCapabilities()
     {
         MappedResult result = ResultMapper.Map(ProcessResult(0, PromotedSummaryJson("COMPLETE", true, @"C:\\package", eventFailed: false)));
         AssertEqual(GuiResultState.Complete, result.State);
@@ -946,6 +946,16 @@ internal static class TestRunner
                     ["execution_reason"] = eventFailed ? "PROVIDER_ERROR" : "NONE",
                     ["missing_evidence"] = eventFailed ? new[] { "System Event Log EVTX was not collected." } : Array.Empty<string>(),
                     ["artifact_reference"] = eventFailed ? null : "raw/windows-event-log-system.evtx"
+                },
+                new Dictionary<string, object?>
+                {
+                    ["id"] = "WINDOWS_HOST_OS_IDENTITY_SNAPSHOT",
+                    ["protected"] = true,
+                    ["compatibility"] = "AVAILABLE",
+                    ["attempted"] = true,
+                    ["execution_state"] = "COLLECTED",
+                    ["execution_reason"] = "NONE",
+                    ["artifact_reference"] = "derived/windows-host-os-identity.json"
                 }
             }
         };

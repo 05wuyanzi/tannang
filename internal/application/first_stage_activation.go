@@ -186,6 +186,11 @@ func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Durat
 		stage.providerDescriptors[hostDescriptor.ID] = cloneDescriptor(hostDescriptor)
 		stage.descriptors = append(stage.descriptors, cloneDescriptor(hostDescriptor))
 		stage.streamingRunners[definition.ID] = deps.HostIdentityRunner
+		hostRequest := capability.CapabilityRequest{ID: definition.ID, Priority: capability.PriorityLate, Protected: true}
+		if err := hostRequest.Validate(); err != nil {
+			return nil, fmt.Errorf("validate protected Host/OS Identity baseline request: %w", err)
+		}
+		stage.baseline = append(stage.baseline, hostRequest)
 	}
 	return stage, nil
 }

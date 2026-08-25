@@ -32,7 +32,7 @@
     {
       "if": {"properties": {"requested_capability": {"properties": {"id": {"const": "WINDOWS_HOST_OS_IDENTITY_SNAPSHOT"}}, "required": ["id"]}}, "required": ["requested_capability"]},
       "then": {"properties": {
-        "requested_capability": {"properties": {"protected": {"const": false}}},
+        "requested_capability": {"properties": {"protected": {"type": "boolean"}}},
         "capability": {"properties": {"id": {"const": "WINDOWS_HOST_OS_IDENTITY_SNAPSHOT"}, "description": {"const": "Capture the local Windows host name, OS version/build, and native architecture."}, "acquisition_semantics": {"const": "STATE_SNAPSHOT"}, "sensitivity": {"const": "medium"}}},
         "selected_provider": {"properties": {"id": {"const": "windows-native-host-os-identity"}}},
         "candidate_evaluations": {"items": {"$ref": "#/$defs/evaluation"}},

@@ -94,8 +94,8 @@ func TestRealProtectedBaselineCannotBeRemovedBySupplementalRequest(t *testing.T)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Records) != 1 || !result.Records[0].Request.Protected || result.Records[0].Request.Priority != capability.PriorityEarly {
-		t.Fatalf("protected baseline was removed or downgraded: %+v", result.Records)
+	if len(result.Records) != 1 || !result.Records[0].Request.Protected || result.Records[0].Request.Priority != capability.PriorityNormal {
+		t.Fatalf("protected baseline authority changed: %+v", result.Records)
 	}
 }
 
@@ -134,7 +134,7 @@ func TestProductionBindingPromotesEventLogIntoProtectedBaseline(t *testing.T) {
 	}
 }
 
-func TestProductionBindingCatalogsHostIdentityWithoutPromotingIt(t *testing.T) {
+func TestProductionBindingPromotesHostIdentityIntoProtectedBaseline(t *testing.T) {
 	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
 		StreamingRunner: newFakeStreamingRunner(), HostIdentityRunner: newFakeHostStreamingRunner(), EventLogRunner: fakeEventLogFileRunner{},
 		FingerprintProbe: func(context.Context, string) (fingerprint.TargetFingerprint, error) {
@@ -145,15 +145,21 @@ func TestProductionBindingCatalogsHostIdentityWithoutPromotingIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stage.catalog) != 3 || len(stage.baseline) != 2 || len(stage.streamingRunners) != 2 {
+	if len(stage.catalog) != 3 || len(stage.baseline) != 3 || len(stage.streamingRunners) != 2 {
 		t.Fatalf("catalog=%d baseline=%d streaming=%d", len(stage.catalog), len(stage.baseline), len(stage.streamingRunners))
 	}
-	if _, ok := stage.catalog[capability.WindowsHostOSIdentitySnapshotID]; !ok {
-		t.Fatal("host identity capability is not in trusted catalog")
+	want := []struct {
+		id       string
+		priority capability.RequestPriority
+	}{
+		{capability.ProcessIdentitySnapshotID, capability.PriorityNormal},
+		{capability.WindowsEventLogSystemChannelID, capability.PriorityLate},
+		{capability.WindowsHostOSIdentitySnapshotID, capability.PriorityLate},
 	}
-	for _, request := range stage.baseline {
-		if request.ID == capability.WindowsHostOSIdentitySnapshotID || !request.Protected {
-			t.Fatalf("host identity was promoted into baseline: %+v", stage.baseline)
+	for index, expected := range want {
+		request := stage.baseline[index]
+		if request.ID != expected.id || request.Priority != expected.priority || !request.Protected {
+			t.Fatalf("baseline[%d]=%+v, want protected %s/%s", index, request, expected.id, expected.priority)
 		}
 	}
 	output := filepath.Join(t.TempDir(), "package")
@@ -161,8 +167,36 @@ func TestProductionBindingCatalogsHostIdentityWithoutPromotingIt(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.State != RunComplete || len(result.Records) != 2 {
+	if result.State != RunComplete || len(result.Records) != 3 {
 		t.Fatalf("default run=%+v", result)
+	}
+}
+
+func TestPromotedHostBaselineCannotBeRemovedOrDuplicated(t *testing.T) {
+	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
+		StreamingRunner: newFakeStreamingRunner(), HostIdentityRunner: newFakeHostStreamingRunner(), EventLogRunner: fakeEventLogFileRunner{},
+		FingerprintProbe: func(context.Context, string) (fingerprint.TargetFingerprint, error) {
+			return fingerprint.TargetFingerprint{Platform: "windows", OSFamily: "WindowsNT", Version: "test", Build: "1", Architecture: "amd64", Privilege: "standard-user", RuntimeLane: "MODERN"}, nil
+		},
+		PackageFactory: defaultFirstStagePackageFactory, Clock: time.Now, CollectionID: NewCollectionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "package")
+	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output, Supplemental: []capability.CapabilityRequest{
+		{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityEarly},
+	}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Records) != 3 {
+		t.Fatalf("records=%+v", result.Records)
+	}
+	for _, record := range result.Records {
+		if !record.Request.Protected {
+			t.Fatalf("promoted capability lost protection: %+v", record.Request)
+		}
 	}
 }
 
@@ -182,8 +216,11 @@ func TestPromotedEventLogBaselineCannotBeRemovedOrDuplicated(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(result.Records) != 2 || result.Records[0].Request.ID != capability.WindowsEventLogSystemChannelID || result.Records[1].Request.ID != capability.ProcessIdentitySnapshotID {
-		t.Fatalf("promoted baseline merge=%+v", result.Records)
+	if len(result.Records) != 2 || result.Records[0].Request.ID != capability.ProcessIdentitySnapshotID || result.Records[1].Request.ID != capability.WindowsEventLogSystemChannelID {
+		t.Fatalf("promoted baseline order=%+v", result.Records)
+	}
+	if result.Records[0].Request.Priority != capability.PriorityNormal || result.Records[1].Request.Priority != capability.PriorityLate {
+		t.Fatalf("promoted baseline priority changed: %+v", result.Records)
 	}
 	for _, record := range result.Records {
 		if !record.Request.Protected {

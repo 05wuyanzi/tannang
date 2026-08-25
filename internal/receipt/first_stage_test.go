@@ -246,10 +246,10 @@ func TestFirstStageV12HostIdentityProtectionAndOwnership(t *testing.T) {
 	if err := record.Validate(); err != nil {
 		t.Fatalf("valid v1.2 host receipt rejected: %v", err)
 	}
-	wrongProtection := record
-	wrongProtection.RequestedCapability.Protected = true
-	if err := wrongProtection.Validate(); err == nil {
-		t.Fatal("protected host supplemental receipt unexpectedly validated")
+	promoted := record
+	promoted.RequestedCapability.Protected = true
+	if err := promoted.Validate(); err != nil {
+		t.Fatalf("promoted host receipt rejected: %v", err)
 	}
 	wrongDefinition := record
 	definitionCopy := *record.Capability

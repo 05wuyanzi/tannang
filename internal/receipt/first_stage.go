@@ -258,9 +258,11 @@ func (r FirstStageRecord) validateV12() error {
 	if !validV12Capability(r.RequestedCapability.ID) {
 		return errors.New("v1.2 receipt contains an unknown capability")
 	}
-	expectedProtected := r.RequestedCapability.ID != capability.WindowsHostOSIdentitySnapshotID
-	if r.RequestedCapability.Protected != expectedProtected {
-		return errors.New("v1.2 capability protection is invalid")
+	// Host/OS Identity was initially accepted as supplemental in v1.2 and is
+	// now promoted. Keep both historical protection values verifiable while
+	// trusted production activation emits Protected=true for new receipts.
+	if r.RequestedCapability.ID != capability.WindowsHostOSIdentitySnapshotID && !r.RequestedCapability.Protected {
+		return errors.New("v1.2 protected capability cannot be unprotected")
 	}
 	if r.Capability == nil || r.Capability.ID != r.RequestedCapability.ID {
 		return errors.New("v1.2 capability does not match request")

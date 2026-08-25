@@ -158,13 +158,9 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			return ExitProviderError
 		}
 	}
-	// The two existing real flags are confirmation-only. Host identity is the
-	// one fixed additive request and remains non-protected until acceptance.
-	var supplemental []capability.CapabilityRequest
-	if hostIdentitySelected {
-		supplemental = []capability.CapabilityRequest{{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate, Protected: false}}
-	}
-	return runRealCollect(ctx, *output, *caseID, supplemental, stdout, stderr, *runtimeStatus)
+	// All three real flags are confirmation-only. The fixed production
+	// baseline owns protected membership and merge/deduplication.
+	return runRealCollect(ctx, *output, *caseID, nil, stdout, stderr, *runtimeStatus)
 }
 
 type realCollectCapabilitySummary struct {
