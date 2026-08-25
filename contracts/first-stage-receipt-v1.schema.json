@@ -57,7 +57,7 @@
       },
       "else": {
         "properties": {
-          "requested_capability": {"properties": {"protected": {"const": false}}},
+          "requested_capability": {"properties": {"protected": {"type": "boolean"}}},
           "capability": {"$ref": "#/$defs/eventlog_capability"},
           "selected_provider": {"$ref": "#/$defs/eventlog_provider"},
           "candidate_evaluations": {"items": {"$ref": "#/$defs/eventlog_evaluation"}},

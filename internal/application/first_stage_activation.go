@@ -59,8 +59,7 @@ func NewProcessIdentitySnapshotFirstStageWithRuntimeSink(finalizationTimeout tim
 }
 
 // NewProcessIdentitySnapshotAndEventLogFirstStage installs the protected
-// process baseline plus the fixed additive System Event Log supplemental
-// binding. The baseline remains process-only until independent acceptance.
+// process baseline plus the fixed protected System Event Log binding.
 func NewProcessIdentitySnapshotAndEventLogFirstStage(finalizationTimeout time.Duration) (*FirstStage, error) {
 	return NewProcessIdentitySnapshotAndEventLogFirstStageWithRuntimeSink(finalizationTimeout, nil)
 }
@@ -155,6 +154,11 @@ func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Durat
 		stage.providerDescriptors[eventDescriptor.ID] = cloneDescriptor(eventDescriptor)
 		stage.descriptors = append(stage.descriptors, cloneDescriptor(eventDescriptor))
 		stage.fileRunners[definition.ID] = deps.EventLogRunner
+		eventRequest := capability.CapabilityRequest{ID: definition.ID, Priority: capability.PriorityLate, Protected: true}
+		if err := eventRequest.Validate(); err != nil {
+			return nil, fmt.Errorf("validate protected Event Log baseline request: %w", err)
+		}
+		stage.baseline = append(stage.baseline, eventRequest)
 		if probe, ok := deps.EventLogRunner.(provider.AvailabilityProber); ok {
 			stage.availabilityProbers[definition.ID] = probe
 		}

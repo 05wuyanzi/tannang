@@ -80,10 +80,11 @@ candidate implements that authority for the process identity artifact and,
 when explicitly requested, the fixed System Event Log EVTX artifact; Provider
 output alone remains an unpublished observation or file.
 
-The bounded FirstStage adapter keeps v0 process-only packages unchanged. An
-explicit `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` supplement uses v1.1 receipt/package
-semantics, reserves `raw/windows-event-log-system.evtx` inside the protected
-staging root, retains only a successfully exported ordinary file, publishes
-one receipt per accepted request, verifies the unchanged v1.0 SHA-256 Manifest,
-and keeps the downstream handoff disabled. The Event Log capability's benign
-real-host acceptance remains pending and is not a production-readiness claim.
+The bounded FirstStage adapter keeps historical v0 process-only packages
+verifiable. The protected `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` capability uses
+v1.1 receipt/package semantics, reserves
+`raw/windows-event-log-system.evtx` inside the protected staging root, retains
+only a successfully exported ordinary file, publishes one receipt per
+accepted request, verifies the unchanged v1.0 SHA-256 Manifest, and keeps the
+downstream handoff disabled. Independent post-promotion benign real-host
+acceptance remains pending and is not a production-readiness claim.

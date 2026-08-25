@@ -81,7 +81,15 @@ func assertReceiptSchemaComposition(t *testing.T, schema map[string]any, defs ma
 	// prevents any third requested capability from reaching this else path.
 	eventElse := schemaObject(t, processConditional["else"], "Event Log capability else")
 	eventElseProperties := schemaObject(t, eventElse["properties"], "Event Log else properties")
-	assertPropertyConst(t, eventElseProperties, "requested_capability", "protected", false)
+	eventRequest := schemaObject(t, eventElseProperties["requested_capability"], "Event Log else request")
+	eventRequestProperties := schemaObject(t, eventRequest["properties"], "Event Log else request properties")
+	protectedSchema := schemaObject(t, eventRequestProperties["protected"], "Event Log protected property")
+	if protectedSchema["type"] != "boolean" {
+		t.Fatalf("Event Log protected property must admit both boolean states, got %#v", protectedSchema)
+	}
+	if _, narrowed := protectedSchema["const"]; narrowed {
+		t.Fatalf("Event Log protected property must not be narrowed to one const value: %#v", protectedSchema)
+	}
 	assertPropertyRef(t, eventElseProperties, "capability", "#/$defs/eventlog_capability")
 	assertPropertyRef(t, eventElseProperties, "selected_provider", "#/$defs/eventlog_provider")
 	assertPropertyItemsRef(t, eventElseProperties, "candidate_evaluations", "#/$defs/eventlog_evaluation")

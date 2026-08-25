@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**状态：** Pre-alpha · 受保护的进程身份 baseline 已激活 · Not production ready
+**状态：** Pre-alpha · 受保护的 Windows baseline candidate 已激活 · Not production ready
 
 **简体中文** | [English](README.md)
 
@@ -13,9 +13,10 @@
 探囊是一个 Windows-first 工程项目，用于描述采集意图、评估 Provider
 兼容性、记录执行结果，并将证据与可审计的完整性元数据一起封装。
 
-普通 `collect --output` CLI 会运行一个不可删减的受保护 baseline capability：
-`PROCESS_IDENTITY_SNAPSHOT`。固定的附加 `--windows-event-log-system` 请求会增加一个
-本地 System Event Log 导出；受保护 baseline 仍只包含进程快照。显式 `--synthetic` 路径继续使用内嵌 fixture，不执行真实
+普通 `collect --output` CLI 会运行固定且不可删减的受保护 baseline capability：
+`PROCESS_IDENTITY_SNAPSHOT` 与 `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`。固定的
+`--windows-event-log-system` 形式保留为幂等的兼容确认，不再增加 supplemental request。
+显式 `--synthetic` 路径继续使用内嵌 fixture，不执行真实
 事件响应证据采集。固定真实 FirstStage 使用的有界 Windows Target Fingerprint 只读取
 少量本机兼容性、资源、权限与输出卷事实；它不是真实 Provider，不进行网络采集，也不
 代表这个 pre-alpha 仓库已具备生产就绪性。仓库 slug 和 CLI 均为 `tannang`，Go module
@@ -23,11 +24,11 @@
 
 仓库现在还包含两个固定、仅供库使用的窄范围 first-party native Windows
 Provider 实现。`PROCESS_IDENTITY_SNAPSHOT` 使用 Tool Help 进程快照 API，
-只把进程 ID、父进程 ID 与可执行文件名以 NDJSON 写入调用方拥有的 writer；附加的
+只把进程 ID、父进程 ID 与可执行文件名以 NDJSON 写入调用方拥有的 writer；固定的
 `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` 使用文档化的 Windows Event Log API，把固定本地
-`System` channel 导出为一个 EVTX artifact。进程 Provider 实现及其独立 benign
-real-Windows acceptance 已通过评审；Event Log capability 的独立 benign acceptance
-仍待进行。当前有界实现提供固定的库级 FirstStage 构造函数、代码级 protected-baseline
+`System` channel 导出为一个 EVTX artifact。进程 Provider 与 supplemental Event Log
+capability 已通过各自有界的评审和真实主机 acceptance Gate；baseline-promotion candidate
+仍需要独立的 post-promotion acceptance。当前有界实现提供固定的库级 FirstStage 构造函数、代码级 protected-baseline
 membership 与按 capability 绑定的双 artifact Evidence Package 适配器。当前已激活的受保护 baseline 让普通 `collect --output` 使用这一固定路径；
 `--process-identity-snapshot` 继续作为同一 baseline 的兼容显式确认，不会重复请求。
 它不暴露 Provider 选择或额外 Capability。默认测试注入 fake acquisition，不会枚举主机
@@ -52,10 +53,10 @@ Provider、它是否兼容、执行时实际发生了什么，以及最终证据
 
 Pre-alpha 实现当前包括：
 
-- 带一个受保护真实 baseline、显式 synthetic 路径和证据包验证的普通 CLI 采集；
+- 带两个受保护真实 capability、显式 synthetic 路径和证据包验证的普通 CLI 采集；
 - Capability 与 Target Fingerprint 模型；
 - Provider 抽象与兼容性 Resolver；
-- 固定、仅供库使用的 `PROCESS_IDENTITY_SNAPSHOT` 与附加
+- 固定、仅供库使用的 `PROCESS_IDENTITY_SNAPSHOT` 与
   `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` Provider 实现、同步的
   caller-owned writer 边界及已评审的 benign Windows acceptance；
 - 位于现有 CLI 子进程边界之上的薄型原生 WinForms GUI，提供由子进程驱动的
@@ -105,9 +106,10 @@ Evidence Package
 ```
 
 Provider 合同定义了 `WINDOWS_INBOX`、`FIRST_PARTY_NATIVE` 和
-`EXTERNAL_BACKEND`。这个有界 `FIRST_PARTY_NATIVE` 进程快照 Provider 是普通
-`collect --output` 与兼容的显式 `--process-identity-snapshot` 形式使用的唯一受保护
-Capability。`--synthetic` 仍只可到达 `SYNTHETIC_TEST`，两种模式保持互斥。
+`EXTERNAL_BACKEND`。有界的 `FIRST_PARTY_NATIVE` 进程快照与 Event Log Provider
+是普通 `collect --output` 及兼容显式确认形式使用的受保护 Capability；
+`--windows-event-log-system` 不接受 channel 或 query 参数，也不会重复请求。
+`--synthetic` 仍只可到达 `SYNTHETIC_TEST`，两种模式保持互斥。
 
 机器可读合同见 [`contracts/`](contracts/)，详细架构和安全边界见
 [`docs/architecture/`](docs/architecture/)。
@@ -173,16 +175,16 @@ checkout。bundle 在依赖已具备后面向 portable、offline-first 使用，
 untested。这一单行结果只是 initial evidence，不是广义 Windows support 声明；原始
 Evidence Package 与完整日志不公开。
 
-## 受保护的 Windows 进程快照 baseline
+## 受保护的 Windows baseline candidate
 
-在 Windows 上，普通 `collect --output` 会运行不可删减的受保护 baseline；该 baseline
-目前只包含 `PROCESS_IDENTITY_SNAPSHOT`，`--case-id` 仍为可选。既有
+在 Windows 上，普通 `collect --output` 会运行不可删减的受保护 baseline；该 candidate
+包含 `PROCESS_IDENTITY_SNAPSHOT` 与固定本地 `System` Event Log EVTX capability，`--case-id` 仍为可选。既有
 `--process-identity-snapshot` 形式确认同一个 baseline 请求，不会造成重复采集、Receipt
 或 artifact。每次调用都会建立独立 Collection ID 与 Evidence Package，或诚实报告部分
 完成、跳过、阻止、失败或 finalization 结果；不会提供风险评分、恶意软件 verdict、自动
 修复、凭据采集或广泛 endpoint 枚举。
 
-固定的附加 Event Log 形式与 baseline 分离：
+Event Log 确认形式不再是独立 supplemental capability：
 
 ```powershell
 $package = Join-Path (Get-Location) "tannang-process-and-system-log"
@@ -190,9 +192,9 @@ go run ./cmd/tannang collect --windows-event-log-system --output $package
 go run ./cmd/tannang verify $package
 ```
 
-它只请求当前保留的本地 `System` channel，并写入一个原生 EVTX artifact；不接受任意
-channel、query、Event ID 过滤、远程 session 或日志配置修改。该附加 capability 的独立
-benign Windows acceptance 仍待后续 Gate。
+它只确认采集当前保留的本地 `System` channel，并写入一个原生 EVTX artifact；不接受任意
+channel、query、Event ID 过滤、远程 session 或日志配置修改。独立的 post-promotion benign
+Windows acceptance 仍是后续 Gate；本分支不宣称该验收或广义 Windows 支持已经成立。
 
 ```powershell
 $package = Join-Path (Get-Location) "tannang-process-snapshot"
@@ -206,8 +208,8 @@ go run ./cmd/tannang verify $package
 go run ./cmd/tannang collect --process-identity-snapshot --output $package
 ```
 
-该已激活的受保护 baseline 已集成到 `dev`。它完成的是刻意保持窄范围的 M4 Minimum
-Useful Baseline，而不是全面能力、production ready、main 集成或 release 声明。
+该受保护 baseline promotion 已在 candidate branch 实现，仍等待独立的
+post-promotion acceptance。它不是全面能力、production ready、main 集成或 release 声明。
 
 ## 证据包
 
@@ -259,9 +261,9 @@ portable_gui_bundle_builder: true
 portable_gui_exact_acceptance: true
 real_windows_provider: true
 real_collection: true
-real_collection_scope: PROCESS_IDENTITY_SNAPSHOT
-supplemental_real_capability: WINDOWS_EVENT_LOG_SYSTEM_CHANNEL
-supplemental_real_capability_acceptance: pending
+real_collection_scope: PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL
+supplemental_real_capability: none
+post_promotion_eventlog_acceptance: pending
 firststage_real_provider_activation: true
 protected_baseline_activation: true
 production_package_adapter: true
@@ -273,10 +275,9 @@ forensic_certification: none
 judicial_validation: none
 ```
 
-普通 CLI 激活会在任何附加 Capability 之前运行固定 FirstStage 的受保护 baseline；
-该 baseline 当前只包含已评审的 `PROCESS_IDENTITY_SNAPSHOT` 范围，且不能通过 CLI 选项
-删除。`--windows-event-log-system` 是固定的附加请求，不会把 Event Log capability 提升为
-baseline。`--synthetic` 继续作为显式非真实 fixture 路径。当前版本不包含 External Backend
+普通 CLI 激活会运行固定 FirstStage 的受保护 baseline；该 candidate 包含两个已评审
+capability，且不能通过 CLI 选项删除。`--windows-event-log-system` 是固定的确认 flag，
+不会重复请求 Event Log capability。`--synthetic` 继续作为显式非真实 fixture 路径。当前版本不包含 External Backend
 集成、Packet Capture，也不支持 Legacy/Heritage Windows runtime。
 Synthetic fixture 中的 `LEGACY` 与 `HERITAGE` 只是测试输入，不代表支持声明。
 
@@ -292,8 +293,8 @@ writer，固定 Event Log Provider 接收一个受保护的绝对文件路径。
 ## 路线图
 
 M4 Minimum Useful Baseline 已在 `dev` 上通过现有受保护的
-`PROCESS_IDENTITY_SNAPSHOT` 完成。它刻意以一个真实 Capability 收口；额外真实
-Capability 属于未来增量扩展，并非完成 M4 的前提。
+`PROCESS_IDENTITY_SNAPSHOT` 完成。本 event-capable 分支增加首个额外真实 capability
+作为有界 promotion candidate；其独立 post-promotion acceptance 仍是单独 Gate。
 
 刻意保持窄范围的 M5 productization milestone 已完成：
 `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI`、确定性的便携 GUI bundle builder、
@@ -301,7 +302,8 @@ Capability 属于未来增量扩展，并非完成 M4 的前提。
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md) 中的验收合同。
 这不等于已发布 RC、通用 Windows 家族支持矩阵或生产就绪；`RC_READY=false` 与
 `production_ready=false` 仍明确保持。TUI 保持 HOLD。
-首个附加 Event Log capability 已实现，但其独立 benign Windows acceptance 仍是后续 Gate。
+首个 Event Log capability 已作为 protected-baseline promotion candidate 实现，但其独立
+post-promotion benign Windows acceptance 仍是后续 Gate。
 
 当前路径基线不声称抵抗高权限进程并发替换 filesystem namespace；本 Pre-alpha 仓库仍
 不具备生产就绪性。
@@ -331,10 +333,10 @@ third_party_binary_executed_by_default: false
 
 探囊使用 Mozilla Public License 2.0，详见 [LICENSE](LICENSE)。
 
-## 已激活的 FirstStage protected baseline
+## 已激活的 FirstStage protected baseline candidate
 
-已集成的实现提供窄范围的 `PROCESS_IDENTITY_SNAPSHOT` FirstStage 库路径，固定
-绑定 Windows Tool Help Provider，并使用受 PATHSAFE 保护的 staging、Receipt 与 SHA-256
-Manifest 验证。普通 CLI 激活将该 Capability 作为唯一不可删减的 protected baseline；固定的
-`--windows-event-log-system` 通过原生 System-channel EVTX binding 作为附加请求运行，不会
-提升为 baseline。显式真实 flag 保持兼容，显式 synthetic 路径保持隔离。production-ready 仍为 false。
+已集成的实现提供 `PROCESS_IDENTITY_SNAPSHOT` 与固定本地 System Event Log EVTX FirstStage
+binding，并使用受 PATHSAFE 保护的 staging、Receipt 与 SHA-256 Manifest 验证。普通 CLI 激活将
+两个 capability 作为不可删减的 protected baseline；`--windows-event-log-system` 保持为兼容确认，
+不会重复采集。显式 synthetic 路径保持隔离；独立 post-promotion acceptance 仍待完成，
+production-ready 仍为 false。

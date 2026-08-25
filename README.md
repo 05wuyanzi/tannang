@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**Status:** Pre-alpha · Protected process-identity baseline active · Not production ready
+**Status:** Pre-alpha · Protected Windows baseline candidate active · Not production ready
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -14,10 +14,11 @@ Tannang is a Windows-first project for describing acquisition intent,
 evaluating provider compatibility, recording execution outcomes, and packaging
 evidence with auditable integrity metadata.
 
-The normal `collect --output` CLI runs one non-removable protected
-baseline capability: `PROCESS_IDENTITY_SNAPSHOT`. The fixed supplemental
-`--windows-event-log-system` request adds one local System Event Log export;
-the protected baseline remains process-only. The explicit `--synthetic`
+The normal `collect --output` CLI runs the fixed non-removable protected
+baseline capabilities `PROCESS_IDENTITY_SNAPSHOT` and
+`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` in the event-capable FirstStage candidate.
+The fixed `--windows-event-log-system` form is retained as an idempotent
+confirmation flag; it does not add a supplemental request. The explicit `--synthetic`
 path remains available for embedded fixtures and does not perform real
 incident-response evidence collection. The bounded Windows Target Fingerprint
 used by the fixed real FirstStage reads limited local compatibility, resource,
@@ -29,12 +30,13 @@ repository slug and CLI are `tannang`; the Go module is
 The repository contains fixed library-level implementations for two narrow
 first-party native Windows Providers. `PROCESS_IDENTITY_SNAPSHOT` uses the Tool
 Help process snapshot API and emits only process ID, parent process ID, and
-executable name as NDJSON to a caller-owned writer. The additive
+executable name as NDJSON to a caller-owned writer. The fixed
 `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` capability uses the documented native
 Windows Event Log API to export the fixed local `System` channel as one EVTX
-artifact. The process Provider and its separate benign real-Windows acceptance
-have passed review; the Event Log capability's independent benign acceptance is
-pending. The bounded implementation provides a fixed library-level FirstStage
+artifact. The process Provider and the supplemental Event Log capability have
+passed their bounded review and real-host acceptance gates. The baseline-
+promotion candidate still requires its own post-promotion acceptance. The
+bounded implementation provides a fixed library-level FirstStage
 constructor, code-level protected-baseline membership, and a capability-keyed
 two-artifact Evidence Package adapter. The active
 protected baseline uses that fixed path for normal
@@ -69,12 +71,12 @@ receipts, status separation, and deterministic package verification.
 
 The pre-alpha implementation currently provides:
 
-- normal CLI collection with one protected real baseline, an
+- normal CLI collection with the two-capability protected real baseline, an
   explicit synthetic path, and package verification;
 - Capability and Target Fingerprint models;
 - a Provider abstraction and compatibility Resolver;
-- a fixed, library-only `PROCESS_IDENTITY_SNAPSHOT` and additive
-  `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` Provider implementation
+- fixed, library-only `PROCESS_IDENTITY_SNAPSHOT` and
+  `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` Provider implementations
   with a synchronous caller-owned writer boundary and reviewed benign Windows
   acceptance;
 - a thin native WinForms GUI over the existing CLI child-process boundary,
@@ -128,11 +130,11 @@ Evidence Package
 ```
 
 The provider contract defines `WINDOWS_INBOX`, `FIRST_PARTY_NATIVE`, and
-`EXTERNAL_BACKEND`. The bounded `FIRST_PARTY_NATIVE` process-snapshot Provider
-is the sole protected capability used by normal `collect --output` and by the
-compatible explicit `--process-identity-snapshot` form. The fixed Event Log
-capability is additive only and is requested with
-`--windows-event-log-system`; it accepts no channel or query argument.
+`EXTERNAL_BACKEND`. The bounded `FIRST_PARTY_NATIVE` process-snapshot and Event
+Log Providers are the protected capabilities used by normal `collect --output`
+and by the compatible explicit confirmation forms. `--windows-event-log-system`
+accepts no channel or query argument and does not duplicate the protected
+request.
 `SYNTHETIC_TEST` remains the only class reachable through `--synthetic`; the
 modes are mutually exclusive.
 
@@ -211,10 +213,11 @@ elevated, so non-elevated execution and every other Windows environment remain
 untested. This single row is initial evidence, not a general Windows support
 claim; its raw Evidence Package and complete logs are not public.
 
-## Protected Windows process snapshot baseline
+## Protected Windows baseline candidate
 
 On Windows, normal `collect --output` runs the non-removable protected baseline,
-which currently contains only `PROCESS_IDENTITY_SNAPSHOT`. `--case-id` remains
+which in this candidate contains both `PROCESS_IDENTITY_SNAPSHOT` and the fixed
+local `System` Event Log EVTX capability. `--case-id` remains
 optional. The existing `--process-identity-snapshot` form confirms the same
 single baseline request and does not cause duplicate acquisition, Receipt, or
 artifact creation. Each invocation creates an independent Collection ID and
@@ -222,7 +225,7 @@ Evidence Package, or reports honest partial, skipped, blocked, failed, or
 finalization outcomes. It does not provide risk scoring, malware verdicts,
 remediation, credential collection, or broad endpoint enumeration.
 
-The fixed additive Event Log form is separate from the protected baseline:
+The Event Log confirmation form is not a separate supplemental capability:
 
 ```powershell
 $package = Join-Path (Get-Location) "tannang-process-and-system-log"
@@ -230,10 +233,11 @@ go run ./cmd/tannang collect --windows-event-log-system --output $package
 go run ./cmd/tannang verify $package
 ```
 
-It requests only the currently retained local `System` channel as one native
-EVTX artifact. It does not accept arbitrary channel names, queries, Event ID
-filters, remote sessions, or log-configuration changes. Independent benign
-Windows acceptance for this supplemental capability remains pending.
+It confirms collection of only the currently retained local `System` channel as
+one native EVTX artifact. It does not accept arbitrary channel names, queries,
+Event ID filters, remote sessions, or log-configuration changes. Independent
+post-promotion benign Windows acceptance remains required; this branch does not
+claim that acceptance or general Windows support.
 
 ```powershell
 $package = Join-Path (Get-Location) "tannang-process-snapshot"
@@ -247,8 +251,8 @@ The backward-compatible explicit form remains accepted:
 go run ./cmd/tannang collect --process-identity-snapshot --output $package
 ```
 
-This active protected baseline is integrated on `dev`. It completes the
-intentionally narrow M4 Minimum Useful Baseline, not a comprehensive
+This protected-baseline promotion is implemented on the candidate branch and
+awaits independent post-promotion acceptance. It is not a comprehensive
 capability, production-ready, main integration, or release claim.
 
 ## Evidence package
@@ -303,9 +307,9 @@ portable_gui_bundle_builder: true
 portable_gui_exact_acceptance: true
 real_windows_provider: true
 real_collection: true
-real_collection_scope: PROCESS_IDENTITY_SNAPSHOT
-supplemental_real_capability: WINDOWS_EVENT_LOG_SYSTEM_CHANNEL
-supplemental_real_capability_acceptance: pending
+real_collection_scope: PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL
+supplemental_real_capability: none
+post_promotion_eventlog_acceptance: pending
 firststage_real_provider_activation: true
 protected_baseline_activation: true
 production_package_adapter: true
@@ -317,11 +321,10 @@ forensic_certification: none
 judicial_validation: none
 ```
 
-The normal CLI activation runs the fixed FirstStage protected
-baseline before any supplemental capability; that baseline currently contains
-only the reviewed `PROCESS_IDENTITY_SNAPSHOT` scope and cannot be removed by a
-CLI option. `--windows-event-log-system` is a fixed additive request and does
-not promote the Event Log capability into the baseline. `--synthetic` remains
+The normal CLI activation runs the fixed FirstStage protected baseline, which
+in this candidate contains both reviewed capabilities and cannot be removed by
+a CLI option. `--windows-event-log-system` is a fixed confirmation-only flag
+and does not duplicate the Event Log request. `--synthetic` remains
 an explicit non-real fixture path. There is no
 external backend integration, packet capture, or supported Legacy/Heritage
 Windows runtime in this release.
@@ -343,9 +346,9 @@ or extraction framework.
 ## Roadmap
 
 M4 Minimum Useful Baseline is complete on `dev` with the existing protected
-`PROCESS_IDENTITY_SNAPSHOT`. It intentionally closes with one real capability;
-additional real capabilities are future additive expansion, not prerequisites
-for M4 completion.
+`PROCESS_IDENTITY_SNAPSHOT`. The event-capable branch adds the first additional
+real capability as a bounded promotion candidate; its independent post-
+promotion acceptance remains a separate gate.
 
 The bounded M5 productization milestone is complete for its deliberately narrow
 scope: the `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI`, deterministic
@@ -353,8 +356,9 @@ portable GUI bundle builder, child-process observability and bounded failure
 diagnostics are integrated, and one exact merged-dev GUI candidate passed the
 acceptance contract recorded in
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md).
-The first additive post-M5 Event Log capability is implemented, but its
-independent benign Windows acceptance remains a later gate. This does not
+The first post-M5 Event Log capability is implemented as a protected-baseline
+promotion candidate, but its independent post-promotion benign Windows
+acceptance remains a later gate. This does not
 constitute a released RC, a general supported Windows family
 matrix, or production readiness; `RC_READY=false` and `production_ready=false`
 remain explicit. TUI remains HOLD.
@@ -391,13 +395,13 @@ open a public Issue for a suspected vulnerability. See
 Tannang is licensed under the Mozilla Public License 2.0. See
 [LICENSE](LICENSE).
 
-## Active FirstStage protected baseline
+## Active FirstStage protected baseline candidate
 
 The integrated implementation provides a narrow library-level
-`PROCESS_IDENTITY_SNAPSHOT` FirstStage path with a fixed Windows Tool Help
-Provider, guarded staging, receipts, and SHA-256 manifest verification. The
-normal CLI activation uses that capability as its sole non-removable
-protected baseline; the fixed `--windows-event-log-system` request is additive
-and uses the native System-channel EVTX binding. The explicit real flag remains
-compatible and the explicit synthetic path remains isolated. Production-
+`PROCESS_IDENTITY_SNAPSHOT` and fixed local System Event Log EVTX FirstStage
+bindings with guarded staging, receipts, and SHA-256 manifest verification. The
+normal CLI activation uses both capabilities as the non-removable protected
+baseline; `--windows-event-log-system` remains a compatibility confirmation and
+does not duplicate acquisition. The explicit synthetic path remains isolated.
+Independent post-promotion acceptance is still required and production-
 readiness remains false.

@@ -72,7 +72,7 @@ func TestRealCollectUsesBoundedSummaryAndExitStates(t *testing.T) {
 		{"partial", fakeRealResult(application.RunPartial, "", execution.Degraded, true, execution.Partial, execution.ReasonNone), ExitPartial},
 		{"unavailable", fakeRealResult(application.RunPartial, "", execution.Unavailable, false, execution.Skipped, execution.ReasonAPIUnavailable), ExitSkipped},
 		{"blocked", fakeRealResult(application.RunPartial, "", execution.Degraded, true, execution.Blocked, execution.ReasonPrivilegeRequired), ExitBlocked},
-		{"provider failed", fakeRealResult(application.RunPartial, "", execution.Available, true, execution.Failed, execution.ReasonProviderError), ExitProviderError},
+		{"provider failed in verified partial run", fakeRealResult(application.RunPartial, "", execution.Available, true, execution.Failed, execution.ReasonProviderError), ExitPartial},
 		{"startup failed", fakeRealResult(application.RunFailed, application.OrchestrationStartupPrerequisiteFailed, execution.Unavailable, false, execution.Skipped, execution.ReasonNone), ExitProviderError},
 		{"cancelled", fakeRealResult(application.RunPartial, application.OrchestrationCancelled, execution.Available, false, execution.Skipped, execution.ReasonNone), ExitPartial},
 		{"finalization failed", fakeRealResult(application.RunFailed, application.OrchestrationPackageFinalizationFailed, execution.Available, false, execution.Skipped, execution.ReasonNone), ExitIntegrity},
@@ -144,7 +144,7 @@ func TestHelpIncludesActivatedBaselineAndExplicitCompatibility(t *testing.T) {
 }
 
 func TestNormalCollectActivatesProtectedBaselineWithoutCaseID(t *testing.T) {
-	result := fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)
+	result := fakePromotedRealResult(application.RunComplete)
 	result.Context.CaseID = ""
 	stage := &fakeRealFirstStage{result: result}
 	factoryCalls := 0
@@ -167,7 +167,7 @@ func TestNormalCollectActivatesProtectedBaselineWithoutCaseID(t *testing.T) {
 	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
 		t.Fatalf("decode summary: %v", err)
 	}
-	if summary.CaseID != "" || len(summary.Capabilities) != 1 || summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID || !summary.Capabilities[0].Protected {
+	if summary.CaseID != "" || len(summary.Capabilities) != 2 || summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID || !summary.Capabilities[0].Protected || summary.Capabilities[1].ID != capability.WindowsEventLogSystemChannelID || !summary.Capabilities[1].Protected {
 		t.Fatalf("summary=%+v", summary)
 	}
 }
@@ -184,14 +184,58 @@ func TestNormalCollectAcceptsOptionalCaseID(t *testing.T) {
 	}
 }
 
-func TestEventLogSupplementFlagIsFixedAndAdditive(t *testing.T) {
+func TestEventLogConfirmationFlagIsFixedAndIdempotent(t *testing.T) {
 	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
 	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
 	defer restore()
 	var stdout, stderr bytes.Buffer
 	code := Run(context.Background(), []string{"collect", "--windows-event-log-system", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
-	if code != ExitOK || len(stage.request.Supplemental) != 1 || stage.request.Supplemental[0].ID != capability.WindowsEventLogSystemChannelID || stage.request.Supplemental[0].Protected {
+	if code != ExitOK || len(stage.request.Supplemental) != 0 {
 		t.Fatalf("code=%d request=%+v stderr=%s", code, stage.request, stderr.String())
+	}
+}
+
+func TestEventLogConfirmationFlagRejectsExplicitFalse(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--windows-event-log-system=false", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitUsage {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+}
+
+func TestBothRealConfirmationFlagsAreIdempotent(t *testing.T) {
+	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
+	defer restore()
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--process-identity-snapshot", "--windows-event-log-system", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitOK || len(stage.request.Supplemental) != 0 {
+		t.Fatalf("code=%d request=%+v stderr=%s", code, stage.request, stderr.String())
+	}
+}
+
+func TestVerifiedPartialEventLogFailurePreservesBothCapabilitySummaries(t *testing.T) {
+	result := fakePromotedPartialEventFailure()
+	stage := &fakeRealFirstStage{result: result}
+	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
+	defer restore()
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitPartial {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	var summary realCollectSummary
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
+		t.Fatalf("decode summary: %v", err)
+	}
+	if summary.RunState != application.RunPartial || !summary.FinalizationVerified || summary.PackageReference == "" || len(summary.Capabilities) != 2 {
+		t.Fatalf("summary=%+v", summary)
+	}
+	if summary.Capabilities[0].ID != capability.ProcessIdentitySnapshotID || summary.Capabilities[0].ExecutionState != execution.Collected || summary.Capabilities[0].ArtifactReference == "" {
+		t.Fatalf("process summary=%+v", summary.Capabilities[0])
+	}
+	if summary.Capabilities[1].ID != capability.WindowsEventLogSystemChannelID || summary.Capabilities[1].ExecutionState != execution.Failed || summary.Capabilities[1].ArtifactReference != "" || len(summary.Capabilities[1].MissingEvidence) == 0 {
+		t.Fatalf("event summary=%+v", summary.Capabilities[1])
 	}
 }
 
@@ -360,6 +404,30 @@ func fakeRealResult(state application.RunState, orchestration application.Orches
 		State:   state, OrchestrationReason: orchestration, Records: []application.CapabilityRecord{record},
 		FinalizationVerified: state != application.RunFailed, PackageReference: `C:\test\package`,
 	}
+}
+
+func fakePromotedRealResult(state application.RunState) application.RunResult {
+	process := fakeRealResult(state, "", execution.Available, true, execution.Collected, execution.ReasonNone)
+	process.Records[0].Request.Priority = capability.PriorityNormal
+	event := application.CapabilityRecord{
+		Request:           capability.CapabilityRequest{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityLate, Protected: true},
+		Compatibility:     execution.Available,
+		Attempted:         true,
+		Execution:         execution.Result{State: execution.Collected, Reason: execution.ReasonNone, SideEffectSummary: "bounded test result"},
+		ReceiptReference:  "receipts/WINDOWS_EVENT_LOG_SYSTEM_CHANNEL.json",
+		ArtifactReference: "raw/windows-event-log-system.evtx",
+	}
+	process.Records = append(process.Records, event)
+	return process
+}
+
+func fakePromotedPartialEventFailure() application.RunResult {
+	result := fakePromotedRealResult(application.RunPartial)
+	event := &result.Records[1]
+	event.Execution = execution.Result{State: execution.Failed, Reason: execution.ReasonProviderError, Detail: "provider-detail", SideEffectSummary: "bounded test failure"}
+	event.MissingEvidence = []string{"System Event Log EVTX was not collected."}
+	event.ArtifactReference = ""
+	return result
 }
 
 func replaceRealFactory(factory realFirstStageFactory) func() {

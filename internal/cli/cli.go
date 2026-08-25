@@ -154,11 +154,9 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			return ExitProviderError
 		}
 	}
-	var supplemental []capability.CapabilityRequest
-	if eventLogSelected {
-		supplemental = []capability.CapabilityRequest{{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityLate, Protected: false}}
-	}
-	return runRealCollect(ctx, *output, *caseID, supplemental, stdout, stderr, *runtimeStatus)
+	// Both real capability flags are confirmation-only. The fixed production
+	// baseline owns their protected membership and merge/deduplication.
+	return runRealCollect(ctx, *output, *caseID, nil, stdout, stderr, *runtimeStatus)
 }
 
 type realCollectCapabilitySummary struct {
@@ -293,6 +291,13 @@ func realCollectExitCode(result application.RunResult) int {
 	}
 	if result.State == application.RunComplete {
 		return ExitOK
+	}
+	if result.State == application.RunPartial {
+		for _, record := range result.Records {
+			if record.Execution.State == execution.Failed {
+				return ExitPartial
+			}
+		}
 	}
 	priority := ExitPartial
 	for _, record := range result.Records {

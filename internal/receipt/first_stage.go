@@ -245,9 +245,6 @@ func (r FirstStageRecord) validateMulti() error {
 	if r.RequestedCapability.ID != capability.ProcessIdentitySnapshotID && r.RequestedCapability.ID != capability.WindowsEventLogSystemChannelID {
 		return errors.New("multi-artifact receipt contains an unknown capability")
 	}
-	if r.RequestedCapability.ID == capability.WindowsEventLogSystemChannelID && r.RequestedCapability.Protected {
-		return errors.New("Event Log supplemental request must not be protected")
-	}
 	if r.Capability == nil {
 		return errors.New("multi-artifact receipt capability is required")
 	}

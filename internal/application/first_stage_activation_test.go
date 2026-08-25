@@ -99,7 +99,7 @@ func TestRealProtectedBaselineCannotBeRemovedBySupplementalRequest(t *testing.T)
 	}
 }
 
-func TestProductionBindingSupportsEventLogSupplementWithoutPromotingBaseline(t *testing.T) {
+func TestProductionBindingPromotesEventLogIntoProtectedBaseline(t *testing.T) {
 	process := newFakeStreamingRunner()
 	event := fakeEventLogFileRunner{}
 	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
@@ -112,11 +112,13 @@ func TestProductionBindingSupportsEventLogSupplementWithoutPromotingBaseline(t *
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stage.baseline) != 1 || len(stage.catalog) != 2 || stage.baseline[0].ID != capability.ProcessIdentitySnapshotID {
+	if len(stage.baseline) != 2 || len(stage.catalog) != 2 ||
+		stage.baseline[0].ID != capability.ProcessIdentitySnapshotID || !stage.baseline[0].Protected ||
+		stage.baseline[1].ID != capability.WindowsEventLogSystemChannelID || !stage.baseline[1].Protected {
 		t.Fatalf("baseline/catalog=%+v/%+v", stage.baseline, stage.catalog)
 	}
 	output := filepath.Join(t.TempDir(), "package")
-	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output, Supplemental: []capability.CapabilityRequest{{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityLate}}})
+	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -129,5 +131,31 @@ func TestProductionBindingSupportsEventLogSupplementWithoutPromotingBaseline(t *
 	}
 	if !strings.Contains(string(metadataBytes), `"schema_version": "1.1"`) || !strings.Contains(string(metadataBytes), `windows-event-log-system.evtx`) {
 		t.Fatalf("metadata=%s", metadataBytes)
+	}
+}
+
+func TestPromotedEventLogBaselineCannotBeRemovedOrDuplicated(t *testing.T) {
+	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
+		StreamingRunner: newFakeStreamingRunner(), EventLogRunner: fakeEventLogFileRunner{},
+		FingerprintProbe: func(context.Context, string) (fingerprint.TargetFingerprint, error) {
+			return fingerprint.TargetFingerprint{Platform: "windows", OSFamily: "WindowsNT", Version: "test", Build: "1", Architecture: "amd64", Privilege: "standard-user", RuntimeLane: "MODERN"}, nil
+		},
+		PackageFactory: defaultFirstStagePackageFactory, Clock: time.Now, CollectionID: NewCollectionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "package")
+	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output, Supplemental: []capability.CapabilityRequest{{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityEarly}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Records) != 2 || result.Records[0].Request.ID != capability.WindowsEventLogSystemChannelID || result.Records[1].Request.ID != capability.ProcessIdentitySnapshotID {
+		t.Fatalf("promoted baseline merge=%+v", result.Records)
+	}
+	for _, record := range result.Records {
+		if !record.Request.Protected {
+			t.Fatalf("promoted capability lost protection: %+v", record.Request)
+		}
 	}
 }

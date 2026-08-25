@@ -1,9 +1,11 @@
 # Genesis security boundaries
 
-The current pre-alpha `collect --output` path invokes only the
-fixed process-snapshot FirstStage path. Its non-removable protected baseline
-contains exactly `PROCESS_IDENTITY_SNAPSHOT`. `--process-identity-snapshot`
-confirms the same baseline without adding a request, while `--synthetic` remains
+The current event-capable candidate `collect --output` path invokes the fixed
+process-snapshot plus System Event Log FirstStage path. Its non-removable
+protected baseline contains exactly `PROCESS_IDENTITY_SNAPSHOT` and
+`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`. `--process-identity-snapshot` and
+`--windows-event-log-system` confirm the same baseline without adding requests,
+while `--synthetic` remains
 a separate fixture-only path and never constructs the real FirstStage. None of
 these paths is a production-readiness claim.
 
@@ -47,8 +49,8 @@ is not a Linux or macOS support claim.
 
 ## Explicit process-snapshot Provider boundary
 
-The library-level `PROCESS_IDENTITY_SNAPSHOT` implementation is the sole narrow real
-Provider implementation in this slice. It observes only process ID, parent
+The library-level `PROCESS_IDENTITY_SNAPSHOT` implementation is one of two
+narrow real Provider implementations in this slice. It observes only process ID, parent
 process ID, and executable name through the Tool Help process snapshot family.
 It retains PID 0 and parent PID 0 as observations without interpretation. It
 does not use `OpenProcess`, command lines, full paths, owner/SID/token data,
@@ -98,21 +100,22 @@ The synthetic Finalizer boundary carries opaque references only. Existing
 synthetic Payload is not authority for real Provider artifact transport. The
 narrow process-snapshot writer seam stops at caller-owned candidate bytes and
 an execution Result; the bounded FirstStage session, not the Provider, owns the
-single-capability package lifecycle. There is no generic multi-capability
-adapter. The CLI validates the request and output path before constructing the
-fixed real FirstStage, invokes only that single-capability constructor, and does
+two-capability package lifecycle. The fixed Event Log Provider receives only a
+caller-owned protected staging file path. There is no generic workspace or
+extraction framework. The CLI validates the request and output path before
+constructing the fixed real FirstStage, invokes only that fixed constructor, and does
 not expose Provider, Resolver, backend, supplemental, or baseline-removal
 selection.
 
-The integrated implementation adds only the fixed process-identity
-package session and its unexported deterministic test seam. Providers still
+The integrated implementation adds only the fixed process-identity and System
+Event Log package session and its unexported deterministic test seam. Providers still
 receive only an `io.Writer`; PATHSAFE owns exclusive creation, exact-file
 discard, and no-overwrite publication. The implementation claims only
 `PREEXISTING_REDIRECTION_SAFETY`. The active protected baseline remains
-`PUBLIC_PRE_ALPHA`, adds no second real capability, and is not production
-ready. This one capability completes the intentionally narrow M4 Minimum
-Useful Baseline on `dev`; it is not a comprehensive capability, main
-integration, or release claim.
+`PUBLIC_PRE_ALPHA` and is not production ready. The event-capable branch adds
+one fixed local System Event Log artifact without broadening collection scope;
+independent post-promotion acceptance remains required. This is not a
+comprehensive capability, main integration, or release claim.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It
