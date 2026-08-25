@@ -33,10 +33,12 @@ Help process snapshot API and emits only process ID, parent process ID, and
 executable name as NDJSON to a caller-owned writer. The fixed
 `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` capability uses the documented native
 Windows Event Log API to export the fixed local `System` channel as one EVTX
-artifact. The process Provider and the supplemental Event Log capability have
-passed their bounded review and real-host acceptance gates. The baseline-
-promotion candidate still requires its own post-promotion acceptance. The
-bounded implementation provides a fixed library-level FirstStage
+artifact. The process Provider and the fixed System Event Log capability are
+the protected two-capability baseline. That promoted baseline has passed
+bounded real-host acceptance on one Windows 11 25H2 amd64 environment through
+both the default headless collection path and the thin one-click GUI path.
+This bounded observation does not establish a general Windows support matrix.
+The bounded implementation provides a fixed library-level FirstStage
 constructor, code-level protected-baseline membership, and a capability-keyed
 two-artifact Evidence Package adapter. The active
 protected baseline uses that fixed path for normal
@@ -235,9 +237,10 @@ go run ./cmd/tannang verify $package
 
 It confirms collection of only the currently retained local `System` channel as
 one native EVTX artifact. It does not accept arbitrary channel names, queries,
-Event ID filters, remote sessions, or log-configuration changes. Independent
-post-promotion benign Windows acceptance remains required; this branch does not
-claim that acceptance or general Windows support.
+Event ID filters, remote sessions, or log-configuration changes. The promoted
+two-capability protected baseline has passed bounded real-host acceptance on one
+Windows 11 25H2 amd64 environment through both the default headless path and
+the thin one-click GUI path; this branch does not claim general Windows support.
 
 ```powershell
 $package = Join-Path (Get-Location) "tannang-process-snapshot"
@@ -252,12 +255,15 @@ go run ./cmd/tannang collect --process-identity-snapshot --output $package
 ```
 
 This protected-baseline promotion is implemented on the candidate branch and
-awaits independent post-promotion acceptance. It is not a comprehensive
-capability, production-ready, main integration, or release claim.
+has passed its bounded post-promotion real-host acceptance. It is not a
+comprehensive capability, production-ready, main integration, or release claim.
 
 ## Evidence package
 
 A package uses this fixed top-level layout:
+Historical process-only v1.0 packages and earlier supplemental Event Log v1.1
+receipts remain valid for backward-compatible verification; promotion changes
+default activation for new real collections, not prior evidence validity.
 
 ```text
 meta/
@@ -309,7 +315,7 @@ real_windows_provider: true
 real_collection: true
 real_collection_scope: PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL
 supplemental_real_capability: none
-post_promotion_eventlog_acceptance: pending
+post_promotion_eventlog_acceptance: complete_bounded_exact_host
 firststage_real_provider_activation: true
 protected_baseline_activation: true
 production_package_adapter: true
@@ -347,8 +353,10 @@ or extraction framework.
 
 M4 Minimum Useful Baseline is complete on `dev` with the existing protected
 `PROCESS_IDENTITY_SNAPSHOT`. The event-capable branch adds the first additional
-real capability as a bounded promotion candidate; its independent post-
-promotion acceptance remains a separate gate.
+real capability as the protected System Event Log baseline; its bounded
+post-promotion real-host acceptance passed through both the default headless and
+thin one-click GUI paths. This remains a bounded candidate-state observation,
+not a general Windows support claim.
 
 The bounded M5 productization milestone is complete for its deliberately narrow
 scope: the `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI`, deterministic
@@ -356,9 +364,9 @@ portable GUI bundle builder, child-process observability and bounded failure
 diagnostics are integrated, and one exact merged-dev GUI candidate passed the
 acceptance contract recorded in
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md).
-The first post-M5 Event Log capability is implemented as a protected-baseline
-promotion candidate, but its independent post-promotion benign Windows
-acceptance remains a later gate. This does not
+The first post-M5 Event Log capability is implemented as the protected System
+Event Log baseline, and its bounded post-promotion benign Windows acceptance
+has passed through both product paths. This does not
 constitute a released RC, a general supported Windows family
 matrix, or production readiness; `RC_READY=false` and `production_ready=false`
 remain explicit. TUI remains HOLD.
@@ -403,5 +411,5 @@ bindings with guarded staging, receipts, and SHA-256 manifest verification. The
 normal CLI activation uses both capabilities as the non-removable protected
 baseline; `--windows-event-log-system` remains a compatibility confirmation and
 does not duplicate acquisition. The explicit synthetic path remains isolated.
-Independent post-promotion acceptance is still required and production-
-readiness remains false.
+Bounded post-promotion acceptance has passed; production-readiness remains
+false.

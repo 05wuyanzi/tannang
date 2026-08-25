@@ -26,9 +26,10 @@
 Provider 实现。`PROCESS_IDENTITY_SNAPSHOT` 使用 Tool Help 进程快照 API，
 只把进程 ID、父进程 ID 与可执行文件名以 NDJSON 写入调用方拥有的 writer；固定的
 `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` 使用文档化的 Windows Event Log API，把固定本地
-`System` channel 导出为一个 EVTX artifact。进程 Provider 与 supplemental Event Log
-capability 已通过各自有界的评审和真实主机 acceptance Gate；baseline-promotion candidate
-仍需要独立的 post-promotion acceptance。当前有界实现提供固定的库级 FirstStage 构造函数、代码级 protected-baseline
+`System` channel 导出为一个 EVTX artifact。进程 Provider 与固定的 System Event Log
+capability 共同组成 protected two-capability baseline；该 promoted baseline 已在一个
+Windows 11 25H2 amd64 环境中通过 default headless collection 与 thin one-click GUI
+两条路径的有界真实主机 acceptance。这一有界观察不建立广义 Windows 支持矩阵。当前有界实现提供固定的库级 FirstStage 构造函数、代码级 protected-baseline
 membership 与按 capability 绑定的双 artifact Evidence Package 适配器。当前已激活的受保护 baseline 让普通 `collect --output` 使用这一固定路径；
 `--process-identity-snapshot` 继续作为同一 baseline 的兼容显式确认，不会重复请求。
 它不暴露 Provider 选择或额外 Capability。默认测试注入 fake acquisition，不会枚举主机
@@ -193,8 +194,9 @@ go run ./cmd/tannang verify $package
 ```
 
 它只确认采集当前保留的本地 `System` channel，并写入一个原生 EVTX artifact；不接受任意
-channel、query、Event ID 过滤、远程 session 或日志配置修改。独立的 post-promotion benign
-Windows acceptance 仍是后续 Gate；本分支不宣称该验收或广义 Windows 支持已经成立。
+channel、query、Event ID 过滤、远程 session 或日志配置修改。该 promoted two-capability
+protected baseline 已在一个 Windows 11 25H2 amd64 环境中通过 default headless 与 thin
+one-click GUI 两条路径的有界真实主机 acceptance；本分支不宣称广义 Windows 支持。
 
 ```powershell
 $package = Join-Path (Get-Location) "tannang-process-snapshot"
@@ -208,12 +210,15 @@ go run ./cmd/tannang verify $package
 go run ./cmd/tannang collect --process-identity-snapshot --output $package
 ```
 
-该受保护 baseline promotion 已在 candidate branch 实现，仍等待独立的
-post-promotion acceptance。它不是全面能力、production ready、main 集成或 release 声明。
+该受保护 baseline promotion 已在 candidate branch 实现，并已通过有界的
+post-promotion real-host acceptance。它不是全面能力、production ready、main 集成或 release 声明。
 
 ## 证据包
 
 证据包采用固定的顶层结构：
+历史的 process-only v1.0 package 与此前 `protected=false` 的 supplemental Event Log
+v1.1 Receipt 仍可用于向后兼容的验证；promotion 只改变新 real collection 的默认激活，
+不改变既有证据的有效性。
 
 ```text
 meta/
@@ -263,7 +268,7 @@ real_windows_provider: true
 real_collection: true
 real_collection_scope: PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL
 supplemental_real_capability: none
-post_promotion_eventlog_acceptance: pending
+post_promotion_eventlog_acceptance: complete_bounded_exact_host
 firststage_real_provider_activation: true
 protected_baseline_activation: true
 production_package_adapter: true
@@ -294,7 +299,9 @@ writer，固定 Event Log Provider 接收一个受保护的绝对文件路径。
 
 M4 Minimum Useful Baseline 已在 `dev` 上通过现有受保护的
 `PROCESS_IDENTITY_SNAPSHOT` 完成。本 event-capable 分支增加首个额外真实 capability
-作为有界 promotion candidate；其独立 post-promotion acceptance 仍是单独 Gate。
+作为受保护的 System Event Log baseline；其有界 post-promotion real-host acceptance
+已通过 default headless 与 thin one-click GUI 两条路径。本观察仍是有界的 candidate-state
+证据，不构成广义 Windows 支持声明。
 
 刻意保持窄范围的 M5 productization milestone 已完成：
 `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI`、确定性的便携 GUI bundle builder、
@@ -302,8 +309,8 @@ M4 Minimum Useful Baseline 已在 `dev` 上通过现有受保护的
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md) 中的验收合同。
 这不等于已发布 RC、通用 Windows 家族支持矩阵或生产就绪；`RC_READY=false` 与
 `production_ready=false` 仍明确保持。TUI 保持 HOLD。
-首个 Event Log capability 已作为 protected-baseline promotion candidate 实现，但其独立
-post-promotion benign Windows acceptance 仍是后续 Gate。
+首个 Event Log capability 已作为受保护的 System Event Log baseline 实现，其有界
+post-promotion benign Windows acceptance 已通过两条产品路径。
 
 当前路径基线不声称抵抗高权限进程并发替换 filesystem namespace；本 Pre-alpha 仓库仍
 不具备生产就绪性。
@@ -338,5 +345,5 @@ third_party_binary_executed_by_default: false
 已集成的实现提供 `PROCESS_IDENTITY_SNAPSHOT` 与固定本地 System Event Log EVTX FirstStage
 binding，并使用受 PATHSAFE 保护的 staging、Receipt 与 SHA-256 Manifest 验证。普通 CLI 激活将
 两个 capability 作为不可删减的 protected baseline；`--windows-event-log-system` 保持为兼容确认，
-不会重复采集。显式 synthetic 路径保持隔离；独立 post-promotion acceptance 仍待完成，
+不会重复采集。显式 synthetic 路径保持隔离；有界 post-promotion acceptance 已通过，
 production-ready 仍为 false。

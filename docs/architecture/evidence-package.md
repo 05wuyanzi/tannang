@@ -76,9 +76,9 @@ the per-record schema ID. It defines no RAW/DERIVED classification. The
 package adapter, not the Provider, owns PATHSAFE staging, path choice,
 close/flush, retain/discard enforcement, SHA-256, Artifact and Receipt
 references, Manifest creation, and publication. The bounded FirstStage
-candidate implements that authority for the process identity artifact and,
-when explicitly requested, the fixed System Event Log EVTX artifact; Provider
-output alone remains an unpublished observation or file.
+candidate implements that authority for the process identity artifact and the
+fixed System Event Log EVTX artifact in the promoted protected baseline;
+Provider output alone remains an unpublished observation or file.
 
 The bounded FirstStage adapter keeps historical v0 process-only packages
 verifiable. The protected `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` capability uses
@@ -86,5 +86,9 @@ v1.1 receipt/package semantics, reserves
 `raw/windows-event-log-system.evtx` inside the protected staging root, retains
 only a successfully exported ordinary file, publishes one receipt per
 accepted request, verifies the unchanged v1.0 SHA-256 Manifest, and keeps the
-downstream handoff disabled. Independent post-promotion benign real-host
-acceptance remains pending and is not a production-readiness claim.
+downstream handoff disabled. The promoted two-capability baseline has passed
+bounded post-promotion benign real-host acceptance; this remains not a
+production-readiness claim.
+Historical v1.1 supplemental Event Log receipts with `protected=false` remain
+valid for backward-compatible verification; promotion changes default activation
+for new real collections, not the validity of prior evidence.

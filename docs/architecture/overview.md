@@ -109,8 +109,10 @@ retained as the opaque RAW artifact
 `raw/windows-event-log-system.evtx` with media type `application/x-evtx`.
 An empty but valid EVTX export is still `COLLECTED`; it is not an incident
 judgment. The confirmation flag is mutually exclusive with `--synthetic` and
-does not add a duplicate request. Independent post-promotion benign Windows
-acceptance remains required for this candidate.
+does not add a duplicate request. The promoted two-capability baseline has
+passed bounded real-host acceptance on one Windows 11 25H2 amd64 environment
+through both the default headless and thin one-click GUI paths; this does not
+establish a general Windows support matrix.
 
 ## First-stage orchestration contract
 
@@ -164,6 +166,7 @@ the same baseline without duplication. The CLI returns a bounded health summary
 rather than a serialized `RunResult` or Provider payload. This remains
 `PUBLIC_PRE_ALPHA` and is not production ready. The intentionally narrow M4
 Minimum Useful Baseline is complete on `dev` with the process capability. The
-Event Log baseline promotion is implemented on this candidate but its
-independent post-promotion benign Windows acceptance remains pending; neither state is a comprehensive capability,
-main-integration, or release-completion claim.
+Event Log baseline promotion is implemented on this candidate and its
+bounded post-promotion benign Windows acceptance has passed through both
+product paths; neither state is a comprehensive capability, main-integration,
+or release-completion claim.

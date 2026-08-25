@@ -114,8 +114,9 @@ discard, and no-overwrite publication. The implementation claims only
 `PREEXISTING_REDIRECTION_SAFETY`. The active protected baseline remains
 `PUBLIC_PRE_ALPHA` and is not production ready. The event-capable branch adds
 one fixed local System Event Log artifact without broadening collection scope;
-independent post-promotion acceptance remains required. This is not a
-comprehensive capability, main integration, or release claim.
+its bounded post-promotion real-host acceptance has passed through the default
+headless and thin one-click GUI paths. This is not a comprehensive capability,
+main integration, or release claim.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It
