@@ -1,0 +1,52 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/first-stage-receipt-v2.schema.json",
+  "title": "Tannang FirstStage Receipt v1.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "manifest_version", "product_version", "runtime_artifact", "collection_id", "target_fingerprint", "requested_capability", "capability", "compatibility", "attempted", "execution", "acquisition_started_at", "acquisition_finished_at"],
+  "properties": {
+    "schema_version": {"const": "1.2"}, "manifest_version": {"const": "1.0"}, "product_version": {"type": "string", "minLength": 1}, "runtime_artifact": {"const": "tannang-first-stage-multi-v1.2"}, "collection_id": {"type": "string", "pattern": "^COL-[0-9a-f-]{36}$"}, "case_id": {"type": "string", "minLength": 1, "maxLength": 128}, "target_fingerprint": {"$ref": "target-fingerprint-v0.schema.json"}, "requested_capability": {"$ref": "#/$defs/request"}, "capability": {"$ref": "capability-v0.schema.json"}, "selected_provider": {"$ref": "#/$defs/provider"}, "compatibility": {"enum": ["AVAILABLE", "DEGRADED", "UNAVAILABLE"]}, "compatibility_reason": {"$ref": "#/$defs/reason"}, "candidate_evaluations": {"type": "array", "items": {"$ref": "#/$defs/evaluation"}}, "attempted": {"type": "boolean"}, "execution": {"$ref": "#/$defs/execution"}, "orchestration_reason": {"enum": ["", "UNKNOWN_CAPABILITY", "RESOLUTION_FAILED", "CANCELLED", "PACKAGE_FINALIZATION_FAILED"]}, "missing_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}}, "artifact_reference": {"$ref": "#/$defs/artifact"}, "acquisition_started_at": {"type": "string", "format": "date-time"}, "acquisition_finished_at": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "if": {"properties": {"requested_capability": {"properties": {"id": {"const": "PROCESS_IDENTITY_SNAPSHOT"}}, "required": ["id"]}}, "required": ["requested_capability"]},
+      "then": {"properties": {
+        "requested_capability": {"properties": {"protected": {"const": true}}},
+        "capability": {"properties": {"id": {"const": "PROCESS_IDENTITY_SNAPSHOT"}, "description": {"const": "Capture a minimal snapshot of visible Windows process identities: process ID, parent process ID, and executable name."}, "acquisition_semantics": {"const": "STATE_SNAPSHOT"}, "sensitivity": {"const": "medium"}}},
+        "selected_provider": {"properties": {"id": {"const": "windows-toolhelp-process-snapshot"}}},
+        "candidate_evaluations": {"items": {"$ref": "#/$defs/evaluation"}},
+        "artifact_reference": {"properties": {"path": {"const": "derived/process-identity-snapshot.ndjson"}, "media_type": {"const": "application/x-ndjson"}, "content_schema_id": {"const": "https://github.com/05wuyanzi/tannang/contracts/process-identity-snapshot-record-v0.schema.json"}, "raw_or_derived": {"const": "DERIVED"}}}
+      }}
+    },
+    {
+      "if": {"properties": {"requested_capability": {"properties": {"id": {"const": "WINDOWS_EVENT_LOG_SYSTEM_CHANNEL"}}, "required": ["id"]}}, "required": ["requested_capability"]},
+      "then": {"properties": {
+        "requested_capability": {"properties": {"protected": {"const": true}}},
+        "capability": {"properties": {"id": {"const": "WINDOWS_EVENT_LOG_SYSTEM_CHANNEL"}, "description": {"const": "Capture the currently retained records from the local Windows System Event Log channel as one native EVTX export."}, "acquisition_semantics": {"const": "EXISTING_ARTIFACT_EXPORT"}, "sensitivity": {"const": "high"}}},
+        "selected_provider": {"properties": {"id": {"const": "windows-wevtapi-system-channel"}}},
+        "candidate_evaluations": {"items": {"$ref": "#/$defs/evaluation"}},
+        "artifact_reference": {"properties": {"path": {"const": "raw/windows-event-log-system.evtx"}, "media_type": {"const": "application/x-evtx"}, "content_schema_id": {"const": "urn:tannang:artifact:windows-event-log-system-evtx-v0"}, "raw_or_derived": {"const": "RAW"}}}
+      }}
+    },
+    {
+      "if": {"properties": {"requested_capability": {"properties": {"id": {"const": "WINDOWS_HOST_OS_IDENTITY_SNAPSHOT"}}, "required": ["id"]}}, "required": ["requested_capability"]},
+      "then": {"properties": {
+        "requested_capability": {"properties": {"protected": {"const": false}}},
+        "capability": {"properties": {"id": {"const": "WINDOWS_HOST_OS_IDENTITY_SNAPSHOT"}, "description": {"const": "Capture the local Windows host name, OS version/build, and native architecture."}, "acquisition_semantics": {"const": "STATE_SNAPSHOT"}, "sensitivity": {"const": "medium"}}},
+        "selected_provider": {"properties": {"id": {"const": "windows-native-host-os-identity"}}},
+        "candidate_evaluations": {"items": {"$ref": "#/$defs/evaluation"}},
+        "artifact_reference": {"properties": {"path": {"const": "derived/windows-host-os-identity.json"}, "media_type": {"const": "application/json"}, "content_schema_id": {"const": "urn:tannang:artifact:windows-host-os-identity-json-v0"}, "raw_or_derived": {"const": "DERIVED"}}}
+      }}
+    }
+  ],
+  "$defs": {
+    "request": {"type": "object", "additionalProperties": false, "required": ["id", "priority", "protected"], "properties": {"id": {"enum": ["PROCESS_IDENTITY_SNAPSHOT", "WINDOWS_EVENT_LOG_SYSTEM_CHANNEL", "WINDOWS_HOST_OS_IDENTITY_SNAPSHOT"]}, "priority": {"enum": ["EARLY", "NORMAL", "LATE"]}, "protected": {"type": "boolean"}}},
+    "provider": {"type": "object", "additionalProperties": false, "required": ["id", "class"], "properties": {"id": {"enum": ["windows-toolhelp-process-snapshot", "windows-wevtapi-system-channel", "windows-native-host-os-identity"]}, "class": {"const": "FIRST_PARTY_NATIVE"}}},
+    "reason": {"enum": ["NONE", "PRIVILEGE_REQUIRED", "API_UNAVAILABLE", "DEPENDENCY_MISSING", "TARGET_STATE_RESTRICTED", "TIMEOUT", "CANCELLED", "PROVIDER_ERROR", "POLICY_DISABLED", "UNSUPPORTED_OS", "UNSUPPORTED_ARCH"]},
+    "execution": {"type": "object", "additionalProperties": false, "required": ["state", "reason", "side_effect_summary"], "properties": {"state": {"enum": ["COLLECTED", "PARTIAL", "SKIPPED", "FAILED", "BLOCKED"]}, "reason": {"$ref": "#/$defs/reason"}, "detail": {"type": "string"}, "side_effect_summary": {"type": "string", "minLength": 1}}},
+    "evaluation": {"type": "object", "additionalProperties": false, "required": ["provider_id", "compatibility", "reason", "eligible", "score"], "properties": {"provider_id": {"enum": ["windows-toolhelp-process-snapshot", "windows-wevtapi-system-channel", "windows-native-host-os-identity"]}, "compatibility": {"enum": ["AVAILABLE", "DEGRADED", "UNAVAILABLE"]}, "reason": {"$ref": "#/$defs/reason"}, "eligible": {"type": "boolean"}, "score": {"type": "integer"}}},
+    "artifact": {"type": "object", "additionalProperties": false, "required": ["path", "media_type", "content_schema_id", "raw_or_derived", "size", "sha256"], "properties": {"path": {"enum": ["derived/process-identity-snapshot.ndjson", "raw/windows-event-log-system.evtx", "derived/windows-host-os-identity.json"]}, "media_type": {"type": "string", "minLength": 1}, "content_schema_id": {"type": "string", "minLength": 1}, "raw_or_derived": {"enum": ["RAW", "DERIVED"]}, "size": {"type": "integer", "minimum": 0}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}
+    }
+  }
+}

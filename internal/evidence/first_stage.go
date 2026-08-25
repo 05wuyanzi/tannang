@@ -138,6 +138,8 @@ func namedArtifactPath(capabilityID string) (string, string, error) {
 		return receipt.FirstStageArtifactPath, "stream", nil
 	case capability.WindowsEventLogSystemChannelID:
 		return receipt.WindowsEventLogSystemArtifactPath, "file", nil
+	case capability.WindowsHostOSIdentitySnapshotID:
+		return receipt.WindowsHostOSIdentityArtifactPath, "stream", nil
 	default:
 		return "", "", errors.New("unsupported real artifact capability")
 	}

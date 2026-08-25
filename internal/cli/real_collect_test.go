@@ -184,6 +184,33 @@ func TestNormalCollectAcceptsOptionalCaseID(t *testing.T) {
 	}
 }
 
+func TestHostIdentityFlagAddsOnlyOneSupplementalRequest(t *testing.T) {
+	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
+	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
+	defer restore()
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--windows-host-os-identity", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitOK || len(stage.request.Supplemental) != 1 {
+		t.Fatalf("code=%d request=%+v stderr=%s", code, stage.request, stderr.String())
+	}
+	request := stage.request.Supplemental[0]
+	if request.ID != capability.WindowsHostOSIdentitySnapshotID || request.Protected || request.Priority != capability.PriorityLate {
+		t.Fatalf("supplemental request=%+v", request)
+	}
+}
+
+func TestHostIdentityFlagRejectsExplicitFalseAndSyntheticMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"collect", "--windows-host-os-identity=false", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr); code != ExitUsage {
+		t.Fatalf("false host flag code=%d stderr=%s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(context.Background(), []string{"collect", "--synthetic", "available-collected", "--windows-host-os-identity", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr); code != ExitUsage {
+		t.Fatalf("synthetic host flag code=%d stderr=%s", code, stderr.String())
+	}
+}
+
 func TestEventLogConfirmationFlagIsFixedAndIdempotent(t *testing.T) {
 	stage := &fakeRealFirstStage{result: fakeRealResult(application.RunComplete, "", execution.Available, true, execution.Collected, execution.ReasonNone)}
 	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
@@ -236,6 +263,36 @@ func TestVerifiedPartialEventLogFailurePreservesBothCapabilitySummaries(t *testi
 	}
 	if summary.Capabilities[1].ID != capability.WindowsEventLogSystemChannelID || summary.Capabilities[1].ExecutionState != execution.Failed || summary.Capabilities[1].ArtifactReference != "" || len(summary.Capabilities[1].MissingEvidence) == 0 {
 		t.Fatalf("event summary=%+v", summary.Capabilities[1])
+	}
+}
+
+func TestVerifiedPartialHostFailureUsesExitPartialAndPreservesPackage(t *testing.T) {
+	result := fakePromotedRealResult(application.RunPartial)
+	host := application.CapabilityRecord{
+		Request:       capability.CapabilityRequest{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate, Protected: false},
+		Compatibility: execution.Available, Attempted: true,
+		Execution:        execution.Result{State: execution.Failed, Reason: execution.ReasonProviderError, SideEffectSummary: "bounded host failure"},
+		MissingEvidence:  []string{"Host identity was not collected."},
+		ReceiptReference: "receipts/WINDOWS_HOST_OS_IDENTITY_SNAPSHOT.json",
+	}
+	result.Records = append(result.Records, host)
+	stage := &fakeRealFirstStage{result: result}
+	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
+	defer restore()
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitPartial {
+		t.Fatalf("code=%d stderr=%s", code, stderr.String())
+	}
+	var summary realCollectSummary
+	if err := json.Unmarshal(stdout.Bytes(), &summary); err != nil {
+		t.Fatal(err)
+	}
+	if summary.RunState != application.RunPartial || !summary.FinalizationVerified || summary.PackageReference == "" || len(summary.Capabilities) != 3 {
+		t.Fatalf("summary=%+v", summary)
+	}
+	if summary.Capabilities[2].ID != capability.WindowsHostOSIdentitySnapshotID || summary.Capabilities[2].ArtifactReference != "" || summary.Capabilities[2].ExecutionState != execution.Failed {
+		t.Fatalf("host summary=%+v", summary.Capabilities[2])
 	}
 }
 

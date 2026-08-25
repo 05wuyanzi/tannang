@@ -60,6 +60,21 @@ func (s *FirstStage) runRealSelected(
 	session *firstStagePackageSession,
 	cancelled *bool,
 ) error {
+	return s.runRealSelectedWithRunner(ctx, collection, target, record, s.streamingRunner, session, cancelled)
+}
+
+func (s *FirstStage) runRealSelectedWithRunner(
+	ctx context.Context,
+	collection CollectionContext,
+	target fingerprint.TargetFingerprint,
+	record *CapabilityRecord,
+	runner provider.StreamingRunner,
+	session *firstStagePackageSession,
+	cancelled *bool,
+) error {
+	if runner == nil {
+		return errors.New("streaming Provider is not initialized")
+	}
 	if ctx.Err() != nil {
 		*cancelled = true
 		s.markCancelled(record)
@@ -116,7 +131,7 @@ func (s *FirstStage) runRealSelected(
 	}
 	record.Attempted = true
 	s.emitRuntime(RuntimeEvent{Type: RuntimeTypeActivity, Event: RuntimeEventProviderStarted})
-	executionResult := s.streamingRunner.ExecuteTo(ctx, *record.Capability, target.Clone(), sink)
+	executionResult := runner.ExecuteTo(ctx, *record.Capability, target.Clone(), sink)
 	s.emitRuntime(RuntimeEvent{Type: RuntimeTypeActivity, Event: RuntimeEventProviderFinished})
 	if validationErr := executionResult.Validate(); validationErr != nil {
 		executionResult = execution.Result{
@@ -395,6 +410,9 @@ func artifactReferenceForCapability(capabilityID string, entry integrity.Entry) 
 	if capabilityID == capability.WindowsEventLogSystemChannelID {
 		return receipt.ArtifactReference{Path: receipt.WindowsEventLogSystemArtifactPath, MediaType: receipt.WindowsEventLogSystemMediaType, ContentSchemaID: receipt.WindowsEventLogSystemSchemaID, RawOrDerived: "RAW", Size: entry.Size, SHA256: entry.SHA256}
 	}
+	if capabilityID == capability.WindowsHostOSIdentitySnapshotID {
+		return receipt.ArtifactReference{Path: receipt.WindowsHostOSIdentityArtifactPath, MediaType: receipt.WindowsHostOSIdentityArtifactMedia, ContentSchemaID: receipt.WindowsHostOSIdentityArtifactSchema, RawOrDerived: "DERIVED", Size: entry.Size, SHA256: entry.SHA256}
+	}
 	return receipt.ArtifactReference{Path: receipt.FirstStageArtifactPath, MediaType: receipt.FirstStageArtifactMedia, ContentSchemaID: receipt.FirstStageArtifactSchema, RawOrDerived: "DERIVED", Size: entry.Size, SHA256: entry.SHA256}
 }
 
@@ -413,6 +431,11 @@ func isNilFirstStagePackageSession(session firstStagePackageSession) bool {
 
 func schemaVersionForRecords(records []CapabilityRecord) string {
 	for _, record := range records {
+		if record.Request.ID == capability.WindowsHostOSIdentitySnapshotID {
+			return receipt.FirstStageV12SchemaVersion
+		}
+	}
+	for _, record := range records {
 		if record.Request.ID == capability.WindowsEventLogSystemChannelID {
 			return receipt.FirstStageMultiSchemaVersion
 		}
@@ -421,6 +444,11 @@ func schemaVersionForRecords(records []CapabilityRecord) string {
 }
 
 func runtimeArtifactForRecords(records []CapabilityRecord) string {
+	for _, record := range records {
+		if record.Request.ID == capability.WindowsHostOSIdentitySnapshotID {
+			return receipt.FirstStageV12RuntimeArtifact
+		}
+	}
 	for _, record := range records {
 		if record.Request.ID == capability.WindowsEventLogSystemChannelID {
 			return receipt.FirstStageMultiRuntimeArtifact

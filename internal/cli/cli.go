@@ -95,6 +95,7 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	fixture := flags.String("synthetic", "", "embedded synthetic fixture name")
 	realSnapshot := flags.Bool("process-identity-snapshot", false, "collect the fixed Windows process identity snapshot")
 	eventLogSystem := flags.Bool("windows-event-log-system", false, "collect the fixed local Windows System Event Log channel")
+	hostIdentity := flags.Bool("windows-host-os-identity", false, "collect the fixed local Windows host/OS identity snapshot")
 	output := flags.String("output", "", "new absolute local evidence package directory")
 	caseID := flags.String("case-id", "", "optional case identifier for real collection")
 	runtimeStatus := flags.Bool("runtime-status-stderr", false, "emit bounded runtime status records to stderr")
@@ -104,6 +105,7 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	fixtureSelected := false
 	realSnapshotSelected := false
 	eventLogSelected := false
+	hostIdentitySelected := false
 	caseIDSelected := false
 	runtimeStatusSelected := false
 	flags.Visit(func(option *flag.Flag) {
@@ -114,6 +116,8 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			realSnapshotSelected = true
 		case "windows-event-log-system":
 			eventLogSelected = true
+		case "windows-host-os-identity":
+			hostIdentitySelected = true
 		case "case-id":
 			caseIDSelected = true
 		case "runtime-status-stderr":
@@ -121,8 +125,8 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 		}
 	})
 	if flags.NArg() != 0 || *output == "" ||
-		(fixtureSelected && (*fixture == "" || realSnapshotSelected || eventLogSelected || caseIDSelected || runtimeStatusSelected)) ||
-		(realSnapshotSelected && !*realSnapshot) || (eventLogSelected && !*eventLogSystem) || (runtimeStatusSelected && !*runtimeStatus) {
+		(fixtureSelected && (*fixture == "" || realSnapshotSelected || eventLogSelected || hostIdentitySelected || caseIDSelected || runtimeStatusSelected)) ||
+		(realSnapshotSelected && !*realSnapshot) || (eventLogSelected && !*eventLogSystem) || (hostIdentitySelected && !*hostIdentity) || (runtimeStatusSelected && !*runtimeStatus) {
 		fmt.Fprintln(stderr, "collect requires --output; the protected process identity baseline is the default, --process-identity-snapshot confirms that baseline, and --synthetic cannot be combined with real-only flags")
 		return ExitUsage
 	}
@@ -154,9 +158,13 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			return ExitProviderError
 		}
 	}
-	// Both real capability flags are confirmation-only. The fixed production
-	// baseline owns their protected membership and merge/deduplication.
-	return runRealCollect(ctx, *output, *caseID, nil, stdout, stderr, *runtimeStatus)
+	// The two existing real flags are confirmation-only. Host identity is the
+	// one fixed additive request and remains non-protected until acceptance.
+	var supplemental []capability.CapabilityRequest
+	if hostIdentitySelected {
+		supplemental = []capability.CapabilityRequest{{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate, Protected: false}}
+	}
+	return runRealCollect(ctx, *output, *caseID, supplemental, stdout, stderr, *runtimeStatus)
 }
 
 type realCollectCapabilitySummary struct {
@@ -346,6 +354,7 @@ func printUsage(writer io.Writer) {
 	fmt.Fprintln(writer, "  tannang collect --output <new-absolute-local-directory> [--case-id <case-id>] [--runtime-status-stderr]")
 	fmt.Fprintln(writer, "  tannang collect --process-identity-snapshot --output <new-absolute-local-directory> [--case-id <case-id>] [--runtime-status-stderr]")
 	fmt.Fprintln(writer, "  tannang collect --windows-event-log-system --output <new-absolute-local-directory> [--case-id <case-id>] [--runtime-status-stderr]")
+	fmt.Fprintln(writer, "  tannang collect --windows-host-os-identity --output <new-absolute-local-directory> [--case-id <case-id>] [--runtime-status-stderr]")
 	fmt.Fprintln(writer, "  tannang collect --synthetic <fixture> --output <new-absolute-local-directory>")
 	fmt.Fprintln(writer, "  tannang verify <absolute-local-package-directory>")
 	fmt.Fprintln(writer, "  tannang version")

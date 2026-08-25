@@ -134,6 +134,38 @@ func TestProductionBindingPromotesEventLogIntoProtectedBaseline(t *testing.T) {
 	}
 }
 
+func TestProductionBindingCatalogsHostIdentityWithoutPromotingIt(t *testing.T) {
+	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
+		StreamingRunner: newFakeStreamingRunner(), HostIdentityRunner: newFakeHostStreamingRunner(), EventLogRunner: fakeEventLogFileRunner{},
+		FingerprintProbe: func(context.Context, string) (fingerprint.TargetFingerprint, error) {
+			return fingerprint.TargetFingerprint{Platform: "windows", OSFamily: "WindowsNT", Version: "test", Build: "1", Architecture: "amd64", Privilege: "standard-user", RuntimeLane: "MODERN"}, nil
+		},
+		PackageFactory: defaultFirstStagePackageFactory, Clock: time.Now, CollectionID: NewCollectionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stage.catalog) != 3 || len(stage.baseline) != 2 || len(stage.streamingRunners) != 2 {
+		t.Fatalf("catalog=%d baseline=%d streaming=%d", len(stage.catalog), len(stage.baseline), len(stage.streamingRunners))
+	}
+	if _, ok := stage.catalog[capability.WindowsHostOSIdentitySnapshotID]; !ok {
+		t.Fatal("host identity capability is not in trusted catalog")
+	}
+	for _, request := range stage.baseline {
+		if request.ID == capability.WindowsHostOSIdentitySnapshotID || !request.Protected {
+			t.Fatalf("host identity was promoted into baseline: %+v", stage.baseline)
+		}
+	}
+	output := filepath.Join(t.TempDir(), "package")
+	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunComplete || len(result.Records) != 2 {
+		t.Fatalf("default run=%+v", result)
+	}
+}
+
 func TestPromotedEventLogBaselineCannotBeRemovedOrDuplicated(t *testing.T) {
 	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
 		StreamingRunner: newFakeStreamingRunner(), EventLogRunner: fakeEventLogFileRunner{},

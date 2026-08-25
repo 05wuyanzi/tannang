@@ -26,13 +26,14 @@ const processIdentitySnapshotProviderID = "windows-toolhelp-process-snapshot"
 // limited to deterministic test substitutions. Production callers cannot
 // replace Provider, Resolver, catalog, baseline policy, or filesystem sinks.
 type processIdentitySnapshotFirstStageDeps struct {
-	StreamingRunner  provider.StreamingRunner
-	EventLogRunner   provider.FileArtifactRunner
-	FingerprintProbe func(context.Context, string) (fingerprint.TargetFingerprint, error)
-	PackageFactory   firstStagePackageFactory
-	Clock            func() time.Time
-	CollectionID     func() (string, error)
-	RuntimeSink      RuntimeEventSink
+	StreamingRunner    provider.StreamingRunner
+	HostIdentityRunner provider.StreamingRunner
+	EventLogRunner     provider.FileArtifactRunner
+	FingerprintProbe   func(context.Context, string) (fingerprint.TargetFingerprint, error)
+	PackageFactory     firstStagePackageFactory
+	Clock              func() time.Time
+	CollectionID       func() (string, error)
+	RuntimeSink        RuntimeEventSink
 }
 
 // NewProcessIdentitySnapshotFirstStage installs the fixed production binding.
@@ -69,8 +70,9 @@ func NewProcessIdentitySnapshotAndEventLogFirstStageWithRuntimeSink(finalization
 		return nil, errors.New("finalization timeout must be positive")
 	}
 	return newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout, processIdentitySnapshotFirstStageDeps{
-		StreamingRunner: provider.NewProcessIdentitySnapshotRunner(),
-		EventLogRunner:  provider.NewWindowsEventLogSystemRunner(),
+		StreamingRunner:    provider.NewProcessIdentitySnapshotRunner(),
+		HostIdentityRunner: provider.NewWindowsHostOSIdentityRunner(),
+		EventLogRunner:     provider.NewWindowsEventLogSystemRunner(),
 		FingerprintProbe: func(ctx context.Context, output string) (fingerprint.TargetFingerprint, error) {
 			return fingerprint.Probe(ctx, output, fingerprint.Options{IncludeCPUPressure: false})
 		},
@@ -127,6 +129,7 @@ func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Durat
 		realMode:               true,
 		streamingRunner:        deps.StreamingRunner,
 		streamingDescriptor:    cloneDescriptor(descriptor),
+		streamingRunners:       map[string]provider.StreamingRunner{capabilityDefinition.ID: deps.StreamingRunner},
 		packageFactory:         deps.PackageFactory,
 		runtimeSink:            deps.RuntimeSink,
 		fileRunners:            make(map[string]provider.FileArtifactRunner),
@@ -163,6 +166,27 @@ func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Durat
 			stage.availabilityProbers[definition.ID] = probe
 		}
 	}
+	if deps.HostIdentityRunner != nil {
+		hostDescriptor := cloneDescriptor(deps.HostIdentityRunner.Descriptor())
+		if err := hostDescriptor.Validate(); err != nil {
+			return nil, fmt.Errorf("validate host identity provider descriptor: %w", err)
+		}
+		if hostDescriptor.ID != provider.WindowsHostOSIdentityProviderID || hostDescriptor.Class != provider.FirstPartyNative || !hostDescriptor.Supports(capability.WindowsHostOSIdentitySnapshotID) {
+			return nil, errors.New("real host identity provider binding is not the fixed host identity Provider")
+		}
+		hostArtifact := deps.HostIdentityRunner.Artifact()
+		if err := hostArtifact.Validate(); err != nil {
+			return nil, fmt.Errorf("validate host identity artifact descriptor: %w", err)
+		}
+		if hostArtifact.MediaType != provider.WindowsHostOSIdentityMediaType || hostArtifact.ContentSchemaID != provider.WindowsHostOSIdentitySchemaID {
+			return nil, errors.New("real host identity artifact binding is not the fixed JSON contract")
+		}
+		definition := capability.WindowsHostOSIdentitySnapshot()
+		stage.catalog[definition.ID] = definition
+		stage.providerDescriptors[hostDescriptor.ID] = cloneDescriptor(hostDescriptor)
+		stage.descriptors = append(stage.descriptors, cloneDescriptor(hostDescriptor))
+		stage.streamingRunners[definition.ID] = deps.HostIdentityRunner
+	}
 	return stage, nil
 }
 
@@ -180,7 +204,7 @@ func isNilDependency(value any) bool {
 }
 
 func (s *FirstStage) validateRealBinding() error {
-	if s == nil || !s.realMode || s.streamingRunner == nil || s.packageFactory == nil {
+	if s == nil || !s.realMode || s.streamingRunner == nil || s.packageFactory == nil || len(s.streamingRunners) == 0 {
 		return errors.New("real first-stage binding is not initialized")
 	}
 	if strings.TrimSpace(s.streamingDescriptor.ID) == "" || s.streamingDescriptor.Class != provider.FirstPartyNative {
