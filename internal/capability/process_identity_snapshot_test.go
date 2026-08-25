@@ -25,3 +25,13 @@ func TestProcessIdentitySnapshotContract(t *testing.T) {
 		t.Fatalf("ProcessIdentitySnapshot().Validate() error: %v", err)
 	}
 }
+
+func TestWindowsEventLogSystemCapabilityContract(t *testing.T) {
+	request := WindowsEventLogSystemChannel()
+	if request.ID != WindowsEventLogSystemChannelID || request.AcquisitionSemantics != ExistingArtifactExport || request.Sensitivity != "high" {
+		t.Fatalf("unexpected Event Log capability: %+v", request)
+	}
+	if err := request.Validate(); err != nil {
+		t.Fatalf("WindowsEventLogSystemChannel().Validate() error: %v", err)
+	}
+}

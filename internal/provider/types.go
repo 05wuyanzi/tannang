@@ -90,6 +90,15 @@ type StreamingRunner interface {
 	ExecuteTo(context.Context, capability.Capability, fingerprint.TargetFingerprint, io.Writer) execution.Result
 }
 
+// FileArtifactRunner writes one native artifact directly to a caller-owned
+// protected staging path. The Provider never chooses package-relative paths,
+// manifests, or publication behavior.
+type FileArtifactRunner interface {
+	Descriptor() Descriptor
+	Artifact() ArtifactDescriptor
+	ExecuteToPath(context.Context, capability.Capability, fingerprint.TargetFingerprint, string) execution.Result
+}
+
 // Valid reports whether a class is recognized.
 func (c Class) Valid() bool {
 	switch c {

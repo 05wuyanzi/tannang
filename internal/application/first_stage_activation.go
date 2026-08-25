@@ -27,6 +27,7 @@ const processIdentitySnapshotProviderID = "windows-toolhelp-process-snapshot"
 // replace Provider, Resolver, catalog, baseline policy, or filesystem sinks.
 type processIdentitySnapshotFirstStageDeps struct {
 	StreamingRunner  provider.StreamingRunner
+	EventLogRunner   provider.FileArtifactRunner
 	FingerprintProbe func(context.Context, string) (fingerprint.TargetFingerprint, error)
 	PackageFactory   firstStagePackageFactory
 	Clock            func() time.Time
@@ -56,6 +57,28 @@ func NewProcessIdentitySnapshotFirstStageWithRuntimeSink(finalizationTimeout tim
 		RuntimeSink:    sink,
 	})
 }
+
+// NewProcessIdentitySnapshotAndEventLogFirstStage installs the protected
+// process baseline plus the fixed protected System Event Log binding.
+func NewProcessIdentitySnapshotAndEventLogFirstStage(finalizationTimeout time.Duration) (*FirstStage, error) {
+	return NewProcessIdentitySnapshotAndEventLogFirstStageWithRuntimeSink(finalizationTimeout, nil)
+}
+
+func NewProcessIdentitySnapshotAndEventLogFirstStageWithRuntimeSink(finalizationTimeout time.Duration, sink RuntimeEventSink) (*FirstStage, error) {
+	if finalizationTimeout <= 0 {
+		return nil, errors.New("finalization timeout must be positive")
+	}
+	return newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout, processIdentitySnapshotFirstStageDeps{
+		StreamingRunner: provider.NewProcessIdentitySnapshotRunner(),
+		EventLogRunner:  provider.NewWindowsEventLogSystemRunner(),
+		FingerprintProbe: func(ctx context.Context, output string) (fingerprint.TargetFingerprint, error) {
+			return fingerprint.Probe(ctx, output, fingerprint.Options{IncludeCPUPressure: false})
+		},
+		PackageFactory: depsDefaultPackageFactory(), Clock: time.Now, CollectionID: NewCollectionID, RuntimeSink: sink,
+	})
+}
+
+func depsDefaultPackageFactory() firstStagePackageFactory { return defaultFirstStagePackageFactory }
 
 func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Duration, deps processIdentitySnapshotFirstStageDeps) (*FirstStage, error) {
 	if finalizationTimeout <= 0 {
@@ -88,7 +111,7 @@ func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Durat
 	}
 	catalog := map[string]capability.Capability{capabilityDefinition.ID: capabilityDefinition}
 	providerDescriptors := map[string]provider.Descriptor{descriptor.ID: cloneDescriptor(descriptor)}
-	return &FirstStage{
+	stage := &FirstStage{
 		catalog:                catalog,
 		baseline:               []capability.CapabilityRequest{request},
 		providerDescriptors:    providerDescriptors,
@@ -106,7 +129,41 @@ func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Durat
 		streamingDescriptor:    cloneDescriptor(descriptor),
 		packageFactory:         deps.PackageFactory,
 		runtimeSink:            deps.RuntimeSink,
-	}, nil
+		fileRunners:            make(map[string]provider.FileArtifactRunner),
+		availabilityProbers:    make(map[string]provider.AvailabilityProber),
+	}
+	if deps.EventLogRunner != nil {
+		eventDescriptor := cloneDescriptor(deps.EventLogRunner.Descriptor())
+		if err := eventDescriptor.Validate(); err != nil {
+			return nil, fmt.Errorf("validate Event Log provider descriptor: %w", err)
+		}
+		if eventDescriptor.ID != provider.WindowsEventLogSystemProviderID || eventDescriptor.Class != provider.FirstPartyNative || !eventDescriptor.Supports(capability.WindowsEventLogSystemChannelID) {
+			return nil, errors.New("real Event Log provider binding is not the fixed System channel Provider")
+		}
+		eventArtifact := deps.EventLogRunner.Artifact()
+		if err := eventArtifact.Validate(); err != nil {
+			return nil, fmt.Errorf("validate Event Log artifact descriptor: %w", err)
+		}
+		if eventArtifact.MediaType != receipt.WindowsEventLogSystemMediaType || eventArtifact.ContentSchemaID != receipt.WindowsEventLogSystemSchemaID {
+			return nil, errors.New("real Event Log artifact binding is not the fixed EVTX contract")
+		}
+		definition := capability.WindowsEventLogSystemChannel()
+		catalog[definition.ID] = definition
+		providerDescriptors[eventDescriptor.ID] = cloneDescriptor(eventDescriptor)
+		stage.catalog[definition.ID] = definition
+		stage.providerDescriptors[eventDescriptor.ID] = cloneDescriptor(eventDescriptor)
+		stage.descriptors = append(stage.descriptors, cloneDescriptor(eventDescriptor))
+		stage.fileRunners[definition.ID] = deps.EventLogRunner
+		eventRequest := capability.CapabilityRequest{ID: definition.ID, Priority: capability.PriorityLate, Protected: true}
+		if err := eventRequest.Validate(); err != nil {
+			return nil, fmt.Errorf("validate protected Event Log baseline request: %w", err)
+		}
+		stage.baseline = append(stage.baseline, eventRequest)
+		if probe, ok := deps.EventLogRunner.(provider.AvailabilityProber); ok {
+			stage.availabilityProbers[definition.ID] = probe
+		}
+	}
+	return stage, nil
 }
 
 func isNilDependency(value any) bool {

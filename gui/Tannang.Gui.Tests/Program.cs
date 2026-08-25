@@ -17,6 +17,7 @@ internal static class TestRunner
         var tests = new (string Name, Action Test)[]
         {
             ("complete result maps to COMPLETE", CompleteResultMapsToComplete),
+            ("promoted baseline maps both protected capabilities", PromotedBaselineMapsBothProtectedCapabilities),
             ("unverified exit zero fails closed", UnverifiedExitZeroFailsClosed),
             ("missing package reference fails closed", MissingPackageReferenceFailsClosed),
             ("partial exit ten maps to PARTIAL", PartialExitTenMapsToPartial),
@@ -48,6 +49,7 @@ internal static class TestRunner
             ("diagnostic counters saturate", DiagnosticCountersSaturate),
             ("copy diagnostics use safe metadata", CopyDiagnosticsUseSafeMetadata),
             ("verified partial package path is retained", VerifiedPartialRetainsPackage),
+            ("event log failure keeps verified partial package visible", EventLogFailureKeepsPartialPackageVisible),
             ("ArgumentList preserves output spaces", OutputArgumentPreservesSpaces),
             ("ArgumentList preserves case ID quotes", CaseIdArgumentPreservesQuotes),
             ("CLI resolution is sibling-only", SiblingResolutionIsStrict),
@@ -107,6 +109,13 @@ internal static class TestRunner
     private static void CompleteResultMapsToComplete()
     {
         MappedResult result = ResultMapper.Map(ProcessResult(0, SummaryJson("COMPLETE", true, @"C:\\package")));
+        AssertEqual(GuiResultState.Complete, result.State);
+        AssertEqual(@"C:\\package", result.PackageReference);
+    }
+
+    private static void PromotedBaselineMapsBothProtectedCapabilities()
+    {
+        MappedResult result = ResultMapper.Map(ProcessResult(0, PromotedSummaryJson("COMPLETE", true, @"C:\\package", eventFailed: false)));
         AssertEqual(GuiResultState.Complete, result.State);
         AssertEqual(@"C:\\package", result.PackageReference);
     }
@@ -428,6 +437,13 @@ internal static class TestRunner
     private static void VerifiedPartialRetainsPackage()
     {
         MappedResult result = ResultMapper.Map(ProcessResult(10, SummaryJson("PARTIAL", true, @"C:\\partial")));
+        AssertEqual(GuiResultState.Partial, result.State);
+        AssertEqual(@"C:\\partial", result.PackageReference);
+    }
+
+    private static void EventLogFailureKeepsPartialPackageVisible()
+    {
+        MappedResult result = ResultMapper.Map(ProcessResult(10, PromotedSummaryJson("PARTIAL", true, @"C:\\partial", eventFailed: true)));
         AssertEqual(GuiResultState.Partial, result.State);
         AssertEqual(@"C:\\partial", result.PackageReference);
     }
@@ -897,6 +913,42 @@ internal static class TestRunner
             summary["package_reference"] = packageReference;
         }
 
+        return JsonSerializer.Serialize(summary);
+    }
+
+    private static string PromotedSummaryJson(string runState, bool finalizationVerified, string packageReference, bool eventFailed)
+    {
+        var summary = new Dictionary<string, object?>
+        {
+            ["collection_id"] = "COL-00000000-0000-4000-8000-000000000001",
+            ["run_state"] = runState,
+            ["finalization_verified"] = finalizationVerified,
+            ["package_reference"] = packageReference,
+            ["capabilities"] = new[]
+            {
+                new Dictionary<string, object?>
+                {
+                    ["id"] = "PROCESS_IDENTITY_SNAPSHOT",
+                    ["protected"] = true,
+                    ["compatibility"] = "AVAILABLE",
+                    ["attempted"] = true,
+                    ["execution_state"] = "COLLECTED",
+                    ["execution_reason"] = "NONE",
+                    ["artifact_reference"] = "derived/process-identity-snapshot.ndjson"
+                },
+                new Dictionary<string, object?>
+                {
+                    ["id"] = "WINDOWS_EVENT_LOG_SYSTEM_CHANNEL",
+                    ["protected"] = true,
+                    ["compatibility"] = "AVAILABLE",
+                    ["attempted"] = true,
+                    ["execution_state"] = eventFailed ? "FAILED" : "COLLECTED",
+                    ["execution_reason"] = eventFailed ? "PROVIDER_ERROR" : "NONE",
+                    ["missing_evidence"] = eventFailed ? new[] { "System Event Log EVTX was not collected." } : Array.Empty<string>(),
+                    ["artifact_reference"] = eventFailed ? null : "raw/windows-event-log-system.evtx"
+                }
+            }
+        };
         return JsonSerializer.Serialize(summary);
     }
 

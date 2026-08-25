@@ -145,6 +145,203 @@ func (f *fakeFirstStageFactory) begin(_ context.Context, _ string) (firstStagePa
 	return f.session, f.err
 }
 
+type fakeMultiArtifactSession struct {
+	fakeFirstStageSession
+	streamOpenCalls int
+	reserveCalls    int
+	discardCalls    int
+	processRetained bool
+	eventReserved   bool
+	eventSealed     bool
+	eventSealErr    error
+	stagingPath     string
+	onReserve       func()
+}
+
+func (f *fakeMultiArtifactSession) OpenStreamingArtifact(capabilityID string) (io.Writer, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if capabilityID != capability.ProcessIdentitySnapshotID {
+		return nil, errors.New("unexpected streaming artifact capability")
+	}
+	f.streamOpenCalls++
+	return &f.buffer, nil
+}
+
+func (f *fakeMultiArtifactSession) ReserveFileArtifactPath(capabilityID string) (string, error) {
+	f.mu.Lock()
+	if capabilityID != capability.WindowsEventLogSystemChannelID {
+		f.mu.Unlock()
+		return "", errors.New("unexpected file artifact capability")
+	}
+	f.reserveCalls++
+	f.eventReserved = true
+	stagingPath := f.stagingPath
+	onReserve := f.onReserve
+	f.mu.Unlock()
+	if onReserve != nil {
+		onReserve()
+	}
+	return stagingPath, nil
+}
+
+func (f *fakeMultiArtifactSession) ValidateFileArtifact(capabilityID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if capabilityID != capability.WindowsEventLogSystemChannelID || !f.eventReserved {
+		return errors.New("file artifact was not reserved")
+	}
+	return nil
+}
+
+func (f *fakeMultiArtifactSession) SealNamedArtifact(capabilityID string, retain bool) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	switch capabilityID {
+	case capability.ProcessIdentitySnapshotID:
+		f.processRetained = retain
+		return nil
+	case capability.WindowsEventLogSystemChannelID:
+		if !f.eventReserved {
+			return errors.New("file artifact was not reserved")
+		}
+		f.discardCalls++
+		f.eventSealed = true
+		if retain {
+			return errors.New("test Event Log artifact must not be retained in this seam")
+		}
+		return f.eventSealErr
+	default:
+		return errors.New("unexpected named artifact capability")
+	}
+}
+
+func (f *fakeMultiArtifactSession) HashNamedArtifact(capabilityID string) (integrity.Entry, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if capabilityID != capability.ProcessIdentitySnapshotID || !f.processRetained {
+		return integrity.Entry{}, errors.New("process artifact was not retained")
+	}
+	digest := sha256.Sum256(f.buffer.Bytes())
+	return integrity.Entry{Path: receipt.FirstStageArtifactPath, Size: int64(f.buffer.Len()), SHA256: hex.EncodeToString(digest[:])}, nil
+}
+
+type fakeMultiArtifactFactory struct {
+	session *fakeMultiArtifactSession
+	calls   int
+}
+
+func (f *fakeMultiArtifactFactory) begin(_ context.Context, _ string) (firstStagePackageSession, error) {
+	f.calls++
+	return f.session, nil
+}
+
+type cancellationFileArtifactRunner struct {
+	calls int
+}
+
+func (r *cancellationFileArtifactRunner) Descriptor() provider.Descriptor {
+	return provider.Descriptor{
+		ID:           provider.WindowsEventLogSystemProviderID,
+		Class:        provider.FirstPartyNative,
+		Capabilities: []string{capability.WindowsEventLogSystemChannelID},
+		Requirements: provider.Requirements{Platforms: []string{"windows"}, OSFamilies: []string{"WindowsNT"}, Architectures: []string{"amd64"}, Available: true, AvailabilityReason: execution.ReasonNone},
+		Quality:      provider.Quality{Compatibility: execution.Available, Reason: execution.ReasonNone, Fidelity: 5, Disturbance: 1, Completeness: 5, OutputStability: 5, EvidenceValue: 5},
+	}
+}
+
+func (r *cancellationFileArtifactRunner) Artifact() provider.ArtifactDescriptor {
+	return provider.ArtifactDescriptor{MediaType: receipt.WindowsEventLogSystemMediaType, ContentSchemaID: receipt.WindowsEventLogSystemSchemaID}
+}
+
+func (r *cancellationFileArtifactRunner) ExecuteToPath(context.Context, capability.Capability, fingerprint.TargetFingerprint, string) execution.Result {
+	r.calls++
+	return execution.Result{State: execution.Collected, Reason: execution.ReasonNone, SideEffectSummary: "test Event Log Provider executed"}
+}
+
+func newRealEventLogTestStage(t *testing.T, process provider.StreamingRunner, event provider.FileArtifactRunner, factory firstStagePackageFactory) *FirstStage {
+	t.Helper()
+	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
+		StreamingRunner: process,
+		EventLogRunner:  event,
+		FingerprintProbe: func(context.Context, string) (fingerprint.TargetFingerprint, error) {
+			return testFingerprint(), nil
+		},
+		PackageFactory: factory,
+		Clock:          testNow,
+		CollectionID:   func() (string, error) { return testCollectionID, nil },
+	})
+	if err != nil {
+		t.Fatalf("construct real Event Log test stage: %v", err)
+	}
+	return stage
+}
+
+func TestRealFirstStageEventLogPreExecutionCancellationDiscardsReservedArtifact(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	process := newFakeStreamingRunner()
+	event := &cancellationFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "windows-event-log-system.evtx")}
+	session.onReserve = cancel
+	factory := &fakeMultiArtifactFactory{session: session}
+	stage := newRealEventLogTestStage(t, process, event, factory.begin)
+	request := realRunRequest(t)
+	request.Supplemental = []capability.CapabilityRequest{{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityLate}}
+
+	result, err := stage.Run(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunPartial || result.OrchestrationReason != OrchestrationCancelled || !result.FinalizationVerified || result.PackageReference == "" {
+		t.Fatalf("pre-execution cancellation result = %+v", result)
+	}
+	if factory.calls != 1 || session.streamOpenCalls != 1 || session.reserveCalls != 1 || session.discardCalls != 1 || !session.eventSealed || !session.processRetained || session.finalizeCalls != 1 || session.abortCalls != 0 {
+		t.Fatalf("pre-execution cancellation lifecycle = factory=%d stream=%d reserve=%d discard=%d sealed=%v processRetained=%v finalize=%d abort=%d", factory.calls, session.streamOpenCalls, session.reserveCalls, session.discardCalls, session.eventSealed, session.processRetained, session.finalizeCalls, session.abortCalls)
+	}
+	if event.calls != 0 {
+		t.Fatalf("Event Log Provider calls = %d, want 0 after pre-execution cancellation", event.calls)
+	}
+	if len(result.Records) != 2 {
+		t.Fatalf("records = %d, want process plus Event Log", len(result.Records))
+	}
+	processRecord, eventRecord := result.Records[0], result.Records[1]
+	if processRecord.Request.ID != capability.ProcessIdentitySnapshotID || !processRecord.Attempted || processRecord.Execution.State != execution.Collected || processRecord.ArtifactReference == "" {
+		t.Fatalf("process evidence was not retained: %+v", processRecord)
+	}
+	if eventRecord.Request.ID != capability.WindowsEventLogSystemChannelID || eventRecord.Attempted || eventRecord.Execution.State != execution.Skipped || eventRecord.Execution.Reason != execution.ReasonNone || eventRecord.OrchestrationReason != OrchestrationCancelled || eventRecord.ArtifactReference != "" {
+		t.Fatalf("Event Log cancellation accounting = %+v", eventRecord)
+	}
+}
+
+func TestRealFirstStageEventLogPreExecutionCancellationDiscardFailureFailsClosed(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	process := newFakeStreamingRunner()
+	event := &cancellationFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{
+		stagingPath:  filepath.Join(t.TempDir(), "windows-event-log-system.evtx"),
+		eventSealErr: errors.New("injected Event Log discard failure"),
+	}
+	session.onReserve = cancel
+	factory := &fakeMultiArtifactFactory{session: session}
+	stage := newRealEventLogTestStage(t, process, event, factory.begin)
+	request := realRunRequest(t)
+	request.Supplemental = []capability.CapabilityRequest{{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityLate}}
+
+	result, err := stage.Run(ctx, request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunFailed || result.OrchestrationReason != OrchestrationPackageFinalizationFailed || result.FinalizationVerified || result.PackageReference != "" {
+		t.Fatalf("discard failure result = %+v", result)
+	}
+	if event.calls != 0 || session.reserveCalls != 1 || session.discardCalls != 1 || session.finalizeCalls != 0 || session.abortCalls != 1 {
+		t.Fatalf("discard failure lifecycle = event=%d reserve=%d discard=%d finalize=%d abort=%d", event.calls, session.reserveCalls, session.discardCalls, session.finalizeCalls, session.abortCalls)
+	}
+	if len(result.Records) != 2 || result.Records[1].ArtifactReference != "" || result.Records[1].Attempted || result.Records[1].Execution.State != execution.Skipped || result.Records[1].Execution.Reason != execution.ReasonNone || result.Records[1].OrchestrationReason != OrchestrationCancelled {
+		t.Fatalf("discard failure fabricated Event Log evidence: %+v", result.Records)
+	}
+}
+
 func TestRealFirstStageSelectedLifecycleUsesOneSession(t *testing.T) {
 	runner := newFakeStreamingRunner()
 	session := &fakeFirstStageSession{}
