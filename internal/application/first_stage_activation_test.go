@@ -172,6 +172,31 @@ func TestProductionBindingPromotesHostIdentityIntoProtectedBaseline(t *testing.T
 	}
 }
 
+func TestProductionBindingRegistersTransportAsSupplementalOnly(t *testing.T) {
+	transport := newFakeTransportStreamingRunner()
+	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
+		StreamingRunner: newFakeStreamingRunner(), HostIdentityRunner: newFakeHostStreamingRunner(), TransportRunner: transport, EventLogRunner: fakeEventLogFileRunner{},
+		FingerprintProbe: func(context.Context, string) (fingerprint.TargetFingerprint, error) {
+			return fingerprint.TargetFingerprint{Platform: "windows", OSFamily: "WindowsNT", Version: "test", Build: "1", Architecture: "amd64", Privilege: "standard-user", RuntimeLane: "MODERN"}, nil
+		},
+		PackageFactory: defaultFirstStagePackageFactory, Clock: time.Now, CollectionID: NewCollectionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(stage.catalog) != 4 || len(stage.baseline) != 3 || len(stage.streamingRunners) != 3 || len(stage.availabilityProbers) != 2 {
+		t.Fatalf("catalog=%d baseline=%d streaming=%d probes=%d", len(stage.catalog), len(stage.baseline), len(stage.streamingRunners), len(stage.availabilityProbers))
+	}
+	if _, ok := stage.availabilityProbers[capability.WindowsTransportEndpointSnapshotID]; !ok {
+		t.Fatal("transport availability prober was not registered")
+	}
+	for _, request := range stage.baseline {
+		if request.ID == capability.WindowsTransportEndpointSnapshotID || !request.Protected {
+			t.Fatalf("transport altered protected baseline: %+v", stage.baseline)
+		}
+	}
+}
+
 func TestPromotedHostBaselineCannotBeRemovedOrDuplicated(t *testing.T) {
 	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
 		StreamingRunner: newFakeStreamingRunner(), HostIdentityRunner: newFakeHostStreamingRunner(), EventLogRunner: fakeEventLogFileRunner{},

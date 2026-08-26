@@ -140,13 +140,15 @@ func namedArtifactPath(capabilityID string) (string, string, error) {
 		return receipt.WindowsEventLogSystemArtifactPath, "file", nil
 	case capability.WindowsHostOSIdentitySnapshotID:
 		return receipt.WindowsHostOSIdentityArtifactPath, "stream", nil
+	case capability.WindowsTransportEndpointSnapshotID:
+		return receipt.WindowsTransportEndpointArtifactPath, "stream", nil
 	default:
 		return "", "", errors.New("unsupported real artifact capability")
 	}
 }
 
-// OpenStreamingArtifact creates a named streaming artifact for the known
-// process capability.
+// OpenStreamingArtifact creates a named streaming artifact for a known
+// streaming capability.
 func (s *FirstStagePackageSession) OpenStreamingArtifact(capabilityID string) (io.Writer, error) {
 	if s == nil {
 		return nil, errors.New("first-stage package session is nil")

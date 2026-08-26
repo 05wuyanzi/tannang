@@ -214,6 +214,44 @@ func TestHostIdentityFlagRejectsExplicitFalseAndSyntheticMode(t *testing.T) {
 	}
 }
 
+func TestTransportEndpointFlagAddsOneSupplementalRequest(t *testing.T) {
+	stage := &fakeRealFirstStage{result: fakePromotedRealResult(application.RunComplete)}
+	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
+	defer restore()
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--windows-transport-endpoints", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitOK || len(stage.request.Supplemental) != 1 {
+		t.Fatalf("code=%d request=%+v stderr=%s", code, stage.request, stderr.String())
+	}
+	request := stage.request.Supplemental[0]
+	if request.ID != capability.WindowsTransportEndpointSnapshotID || request.Priority != capability.PriorityLate || request.Protected {
+		t.Fatalf("supplemental request=%+v", request)
+	}
+}
+
+func TestTransportEndpointFlagCombinesWithConfirmationFlagsWithoutDuplicates(t *testing.T) {
+	stage := &fakeRealFirstStage{result: fakePromotedRealResult(application.RunComplete)}
+	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })
+	defer restore()
+	var stdout, stderr bytes.Buffer
+	code := Run(context.Background(), []string{"collect", "--process-identity-snapshot", "--windows-event-log-system", "--windows-host-os-identity", "--windows-transport-endpoints", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr)
+	if code != ExitOK || len(stage.request.Supplemental) != 1 || stage.request.Supplemental[0].ID != capability.WindowsTransportEndpointSnapshotID {
+		t.Fatalf("code=%d request=%+v stderr=%s", code, stage.request, stderr.String())
+	}
+}
+
+func TestTransportEndpointFlagRejectsFalseAndSyntheticMode(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := Run(context.Background(), []string{"collect", "--windows-transport-endpoints=false", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr); code != ExitUsage {
+		t.Fatalf("false transport flag code=%d stderr=%s", code, stderr.String())
+	}
+	stdout.Reset()
+	stderr.Reset()
+	if code := Run(context.Background(), []string{"collect", "--synthetic", "available-collected", "--windows-transport-endpoints", "--output", filepath.Join(t.TempDir(), "package")}, &stdout, &stderr); code != ExitUsage {
+		t.Fatalf("synthetic transport flag code=%d stderr=%s", code, stderr.String())
+	}
+}
+
 func TestEventLogConfirmationFlagIsFixedAndIdempotent(t *testing.T) {
 	stage := &fakeRealFirstStage{result: fakePromotedRealResult(application.RunComplete)}
 	restore := replaceRealFactory(func() (realFirstStage, error) { return stage, nil })

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/05wuyanzi/tannang/internal/cli"
@@ -41,5 +42,15 @@ func TestCollectExitStatesAndVerify(t *testing.T) {
 				t.Fatalf("verify exit = %d; stdout=%s stderr=%s", code, stdout.String(), stderr.String())
 			}
 		})
+	}
+}
+
+func TestHelpAdvertisesOnlyTheBoundedTransportSupplement(t *testing.T) {
+	var stdout, stderr bytes.Buffer
+	if code := cli.Run(context.Background(), []string{"help"}, &stdout, &stderr); code != cli.ExitOK {
+		t.Fatalf("help exit=%d stderr=%s", code, stderr.String())
+	}
+	if !strings.Contains(stdout.String(), "--windows-transport-endpoints") {
+		t.Fatalf("transport flag missing from help: %s", stdout.String())
 	}
 }

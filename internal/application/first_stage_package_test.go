@@ -49,6 +49,12 @@ func (f *fakeStreamingRunner) Artifact() provider.ArtifactDescriptor {
 	}
 	return provider.ArtifactDescriptor{MediaType: receipt.FirstStageArtifactMedia, ContentSchemaID: receipt.FirstStageArtifactSchema}
 }
+func (f *fakeStreamingRunner) Probe(context.Context, fingerprint.TargetFingerprint) (execution.Reason, error) {
+	if f.descriptor.Requirements.Available {
+		return execution.ReasonNone, nil
+	}
+	return f.descriptor.Requirements.AvailabilityReason, nil
+}
 func (f *fakeStreamingRunner) ExecuteTo(ctx context.Context, _ capability.Capability, _ fingerprint.TargetFingerprint, writer io.Writer) execution.Result {
 	f.calls++
 	if f.execute != nil {
@@ -151,25 +157,26 @@ func (f *fakeFirstStageFactory) begin(_ context.Context, _ string) (firstStagePa
 
 type fakeMultiArtifactSession struct {
 	fakeFirstStageSession
-	streamOpenCalls  int
-	reserveCalls     int
-	discardCalls     int
-	processRetained  bool
-	hostRetained     bool
-	hostFailed       bool
-	eventReserved    bool
-	eventSealed      bool
-	eventRetained    bool
-	allowEventRetain bool
-	eventSealErr     error
-	stagingPath      string
-	onReserve        func()
+	streamOpenCalls   int
+	reserveCalls      int
+	discardCalls      int
+	processRetained   bool
+	hostRetained      bool
+	transportRetained bool
+	hostFailed        bool
+	eventReserved     bool
+	eventSealed       bool
+	eventRetained     bool
+	allowEventRetain  bool
+	eventSealErr      error
+	stagingPath       string
+	onReserve         func()
 }
 
 func (f *fakeMultiArtifactSession) OpenStreamingArtifact(capabilityID string) (io.Writer, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if capabilityID != capability.ProcessIdentitySnapshotID && capabilityID != capability.WindowsHostOSIdentitySnapshotID {
+	if capabilityID != capability.ProcessIdentitySnapshotID && capabilityID != capability.WindowsHostOSIdentitySnapshotID && capabilityID != capability.WindowsTransportEndpointSnapshotID {
 		return nil, errors.New("unexpected streaming artifact capability")
 	}
 	f.streamOpenCalls++
@@ -215,6 +222,9 @@ func (f *fakeMultiArtifactSession) SealNamedArtifact(capabilityID string, retain
 	case capability.WindowsHostOSIdentitySnapshotID:
 		f.hostRetained = retain
 		return nil
+	case capability.WindowsTransportEndpointSnapshotID:
+		f.transportRetained = retain
+		return nil
 	case capability.WindowsEventLogSystemChannelID:
 		if !f.eventReserved {
 			return errors.New("file artifact was not reserved")
@@ -238,7 +248,7 @@ func (f *fakeMultiArtifactSession) SealNamedArtifact(capabilityID string, retain
 func (f *fakeMultiArtifactSession) HashNamedArtifact(capabilityID string) (integrity.Entry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if (capabilityID == capability.ProcessIdentitySnapshotID && !f.processRetained) || (capabilityID == capability.WindowsHostOSIdentitySnapshotID && !f.hostRetained) || (capabilityID == capability.WindowsEventLogSystemChannelID && !f.eventRetained) || (capabilityID != capability.ProcessIdentitySnapshotID && capabilityID != capability.WindowsHostOSIdentitySnapshotID && capabilityID != capability.WindowsEventLogSystemChannelID) {
+	if (capabilityID == capability.ProcessIdentitySnapshotID && !f.processRetained) || (capabilityID == capability.WindowsHostOSIdentitySnapshotID && !f.hostRetained) || (capabilityID == capability.WindowsTransportEndpointSnapshotID && !f.transportRetained) || (capabilityID == capability.WindowsEventLogSystemChannelID && !f.eventRetained) || (capabilityID != capability.ProcessIdentitySnapshotID && capabilityID != capability.WindowsHostOSIdentitySnapshotID && capabilityID != capability.WindowsTransportEndpointSnapshotID && capabilityID != capability.WindowsEventLogSystemChannelID) {
 		return integrity.Entry{}, errors.New("process artifact was not retained")
 	}
 	digest := sha256.Sum256(f.buffer.Bytes())
@@ -247,6 +257,8 @@ func (f *fakeMultiArtifactSession) HashNamedArtifact(capabilityID string) (integ
 		path = receipt.WindowsHostOSIdentityArtifactPath
 	} else if capabilityID == capability.WindowsEventLogSystemChannelID {
 		path = receipt.WindowsEventLogSystemArtifactPath
+	} else if capabilityID == capability.WindowsTransportEndpointSnapshotID {
+		path = receipt.WindowsTransportEndpointArtifactPath
 	}
 	return integrity.Entry{Path: path, Size: int64(f.buffer.Len()), SHA256: hex.EncodeToString(digest[:])}, nil
 }
@@ -329,6 +341,213 @@ func newRealHostTestStage(t *testing.T, process, host provider.StreamingRunner, 
 		t.Fatalf("construct real host identity test stage: %v", err)
 	}
 	return stage
+}
+
+func newRealTransportTestStage(t *testing.T, process, host, transport provider.StreamingRunner, event provider.FileArtifactRunner, factory firstStagePackageFactory) *FirstStage {
+	t.Helper()
+	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
+		StreamingRunner: process, HostIdentityRunner: host, TransportRunner: transport, EventLogRunner: event,
+		FingerprintProbe: func(context.Context, string) (fingerprint.TargetFingerprint, error) { return testFingerprint(), nil },
+		PackageFactory:   factory, Clock: testNow, CollectionID: func() (string, error) { return testCollectionID, nil },
+	})
+	if err != nil {
+		t.Fatalf("construct real transport test stage: %v", err)
+	}
+	return stage
+}
+
+func newFakeTransportStreamingRunner() *fakeStreamingRunner {
+	return &fakeStreamingRunner{
+		descriptor: provider.Descriptor{
+			ID: provider.WindowsTransportEndpointProviderID, Class: provider.FirstPartyNative,
+			Capabilities: []string{capability.WindowsTransportEndpointSnapshotID},
+			Requirements: provider.Requirements{Platforms: []string{"windows"}, OSFamilies: []string{"WindowsNT"}, Architectures: []string{"amd64", "x86"}, Available: true, AvailabilityReason: execution.ReasonNone},
+			Quality:      provider.Quality{Compatibility: execution.Available, Reason: execution.ReasonNone, Fidelity: 5, Completeness: 5, OutputStability: 5, EvidenceValue: 5},
+		},
+		artifact:           []byte(`{"protocol":"TCP","address_family":"IPv4","local_address":"127.0.0.1","local_port":1,"local_scope_id":null,"remote_address":null,"remote_port":null,"remote_scope_id":null,"tcp_state":2,"owning_pid":1}` + "\n"),
+		artifactDescriptor: provider.ArtifactDescriptor{MediaType: provider.WindowsTransportEndpointMediaType, ContentSchemaID: provider.WindowsTransportEndpointSchemaID},
+		result:             execution.Result{State: execution.Collected, Reason: execution.ReasonNone, SideEffectSummary: "Fake transport snapshot completed."},
+	}
+}
+
+func TestRealFirstStageNetworkSupplementalUsesV13AndRetainsOneArtifact(t *testing.T) {
+	process := newFakeStreamingRunner()
+	host := newFakeHostStreamingRunner()
+	transport := newFakeTransportStreamingRunner()
+	event := &acceptedFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealTransportTestStage(t, process, host, transport, event, (&fakeMultiArtifactFactory{session: session}).begin)
+	request := realRunRequest(t)
+	request.Supplemental = []capability.CapabilityRequest{{ID: capability.WindowsTransportEndpointSnapshotID, Priority: capability.PriorityLate}}
+	result, err := stage.Run(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunComplete || len(result.Records) != 4 || !result.FinalizationVerified {
+		t.Fatalf("result=%+v", result)
+	}
+	if session.metadata.SchemaVersion != receipt.FirstStageV13SchemaVersion || session.metadata.RuntimeArtifact != receipt.FirstStageV13RuntimeArtifact || len(session.metadata.ReceiptReferences) != 4 {
+		t.Fatalf("metadata=%+v", session.metadata)
+	}
+	session.metadata.DirectoryLayout = []string{"meta", "raw", "derived", "normalized", "receipts", "hashes", "handoff", "reports"}
+	if err := session.metadata.Validate(); err != nil {
+		t.Fatalf("metadata validation=%v", err)
+	}
+	if len(session.metadata.ArtifactReferences) != 4 || !session.transportRetained {
+		t.Fatalf("artifact refs=%+v transportRetained=%v", session.metadata.ArtifactReferences, session.transportRetained)
+	}
+	for _, record := range result.Records {
+		if record.Request.ID == capability.WindowsTransportEndpointSnapshotID {
+			if record.Request.Protected || record.ArtifactReference != receipt.WindowsTransportEndpointArtifactPath || record.Execution.State != execution.Collected {
+				t.Fatalf("network record=%+v", record)
+			}
+		}
+	}
+}
+
+func TestRealFirstStageNetworkRejectsLegacySessionBeforeOpenOrExecute(t *testing.T) {
+	process := newFakeStreamingRunner()
+	process.descriptor.Requirements.Available = false
+	process.descriptor.Requirements.AvailabilityReason = execution.ReasonAPIUnavailable
+	transport := newFakeTransportStreamingRunner()
+	legacy := &fakeFirstStageSession{}
+	factory := &fakeFirstStageFactory{session: legacy}
+	stage := newRealTransportTestStage(t, process, nil, transport, nil, factory.begin)
+	output := filepath.Join(t.TempDir(), "package")
+	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output, Supplemental: []capability.CapabilityRequest{{ID: capability.WindowsTransportEndpointSnapshotID, Priority: capability.PriorityLate}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunFailed || result.OrchestrationReason != OrchestrationPackageFinalizationFailed {
+		t.Fatalf("legacy network session result=%+v", result)
+	}
+	if legacy.openCalls != 0 || transport.calls != 0 || legacy.buffer.Len() != 0 || legacy.abortCalls != 1 {
+		t.Fatalf("legacy network lifecycle open=%d execute=%d bytes=%d abort=%d", legacy.openCalls, transport.calls, legacy.buffer.Len(), legacy.abortCalls)
+	}
+	for _, record := range result.Records {
+		if record.Request.ID == capability.WindowsTransportEndpointSnapshotID {
+			if record.Attempted || record.ArtifactReference != "" || record.Execution.State != execution.Skipped {
+				t.Fatalf("legacy network record=%+v", record)
+			}
+		}
+	}
+}
+
+func TestRealFirstStageNetworkUnavailableStillFinalizesV13(t *testing.T) {
+	process := newFakeStreamingRunner()
+	host := newFakeHostStreamingRunner()
+	transport := newFakeTransportStreamingRunner()
+	transport.descriptor.Requirements.Available = false
+	transport.descriptor.Requirements.AvailabilityReason = execution.ReasonAPIUnavailable
+	event := &acceptedFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealTransportTestStage(t, process, host, transport, event, (&fakeMultiArtifactFactory{session: session}).begin)
+	request := realRunRequest(t)
+	request.Supplemental = []capability.CapabilityRequest{{ID: capability.WindowsTransportEndpointSnapshotID, Priority: capability.PriorityLate}}
+	result, err := stage.Run(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunPartial || !result.FinalizationVerified || len(result.Records) != 4 {
+		t.Fatalf("result=%+v", result)
+	}
+	if session.metadata.SchemaVersion != receipt.FirstStageV13SchemaVersion || len(session.metadata.ArtifactReferences) != 3 {
+		t.Fatalf("metadata=%+v", session.metadata)
+	}
+	network := result.Records[3]
+	if network.Request.ID != capability.WindowsTransportEndpointSnapshotID || network.Execution.State != execution.Skipped || network.Compatibility != execution.Unavailable || network.ArtifactReference != "" {
+		t.Fatalf("network=%+v", network)
+	}
+}
+
+func TestRealFirstStageDefaultWithTransportBindingRemainsV12(t *testing.T) {
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealTransportTestStage(t, newFakeStreamingRunner(), newFakeHostStreamingRunner(), newFakeTransportStreamingRunner(), &acceptedFileArtifactRunner{}, (&fakeMultiArtifactFactory{session: session}).begin)
+	result, err := stage.Run(context.Background(), realRunRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunComplete || len(result.Records) != 3 {
+		t.Fatalf("result=%+v", result)
+	}
+	if session.metadata.SchemaVersion != receipt.FirstStageV12SchemaVersion || session.metadata.RuntimeArtifact != receipt.FirstStageV12RuntimeArtifact || len(session.metadata.ReceiptReferences) != 3 {
+		t.Fatalf("metadata=%+v", session.metadata)
+	}
+	session.metadata.DirectoryLayout = []string{"meta", "raw", "derived", "normalized", "receipts", "hashes", "handoff", "reports"}
+	if err := session.metadata.Validate(); err != nil {
+		t.Fatalf("v1.2 metadata with network descriptor rejected: %v", err)
+	}
+}
+
+func TestRealFirstStageNetworkPackagePublishesAndVerifiesV13(t *testing.T) {
+	stage := newRealTransportTestStage(t, newFakeStreamingRunner(), newFakeHostStreamingRunner(), newFakeTransportStreamingRunner(), &acceptedFileArtifactRunner{}, defaultFirstStagePackageFactory)
+	output := filepath.Join(t.TempDir(), "package")
+	request := RunRequest{OutputDestination: output, Supplemental: []capability.CapabilityRequest{{ID: capability.WindowsTransportEndpointSnapshotID, Priority: capability.PriorityLate}}}
+	result, err := stage.Run(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunComplete || !result.FinalizationVerified || len(result.Records) != 4 {
+		t.Fatalf("result=%+v", result)
+	}
+	if err := integrity.Verify(output); err != nil {
+		t.Fatalf("published v1.3 package failed verification: %v", err)
+	}
+	metadataBytes, err := os.ReadFile(filepath.Join(output, "meta", "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(metadataBytes, []byte(`"schema_version": "1.3"`)) || !bytes.Contains(metadataBytes, []byte(`derived/windows-transport-endpoints.ndjson`)) {
+		t.Fatalf("metadata=%s", metadataBytes)
+	}
+}
+
+func TestRealFirstStageNetworkFailureRetainsProtectedSurvivorsAndV13Accounting(t *testing.T) {
+	transport := newFakeTransportStreamingRunner()
+	transport.result = execution.Result{State: execution.Failed, Reason: execution.ReasonProviderError, SideEffectSummary: "bounded transport failure"}
+	stage := newRealTransportTestStage(t, newFakeStreamingRunner(), newFakeHostStreamingRunner(), transport, &acceptedFileArtifactRunner{}, defaultFirstStagePackageFactory)
+	output := filepath.Join(t.TempDir(), "package")
+	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output, Supplemental: []capability.CapabilityRequest{{ID: capability.WindowsTransportEndpointSnapshotID, Priority: capability.PriorityLate}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunPartial || !result.FinalizationVerified || len(result.Records) != 4 {
+		t.Fatalf("result=%+v", result)
+	}
+	for index, record := range result.Records {
+		if index < 3 && (record.Execution.State != execution.Collected || record.ArtifactReference == "") {
+			t.Fatalf("protected survivor[%d]=%+v", index, record)
+		}
+	}
+	network := result.Records[3]
+	if network.Execution.State != execution.Failed || network.Execution.Reason != execution.ReasonProviderError || network.ArtifactReference != "" {
+		t.Fatalf("network failure=%+v", network)
+	}
+	if err := integrity.Verify(output); err != nil {
+		t.Fatalf("partial v1.3 package failed verification: %v", err)
+	}
+}
+
+func TestRealFirstStageDefaultPackageWithNetworkBindingStaysV12(t *testing.T) {
+	stage := newRealTransportTestStage(t, newFakeStreamingRunner(), newFakeHostStreamingRunner(), newFakeTransportStreamingRunner(), &acceptedFileArtifactRunner{}, defaultFirstStagePackageFactory)
+	output := filepath.Join(t.TempDir(), "package")
+	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunComplete || len(result.Records) != 3 || !result.FinalizationVerified {
+		t.Fatalf("result=%+v", result)
+	}
+	if err := integrity.Verify(output); err != nil {
+		t.Fatalf("published default package failed verification: %v", err)
+	}
+	metadataBytes, err := os.ReadFile(filepath.Join(output, "meta", "package.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Contains(metadataBytes, []byte(`"schema_version": "1.2"`)) || bytes.Contains(metadataBytes, []byte(`windows-transport-endpoints`)) {
+		t.Fatalf("metadata=%s", metadataBytes)
+	}
 }
 
 func TestRealFirstStageProtectedHostUsesV12AndRetainsBaselineArtifacts(t *testing.T) {

@@ -161,6 +161,31 @@ func TestFirstStagePackageSessionAbortCachesSuccess(t *testing.T) {
 	}
 }
 
+func TestFirstStagePackageSessionSupportsTransportStreamingArtifact(t *testing.T) {
+	session, err := BeginFirstStagePackage(context.Background(), filepath.Join(t.TempDir(), "package"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = session.Abort() })
+	writer, err := session.OpenStreamingArtifact(capability.WindowsTransportEndpointSnapshotID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := writer.Write([]byte("{}\n")); err != nil {
+		t.Fatal(err)
+	}
+	if err := session.SealNamedArtifact(capability.WindowsTransportEndpointSnapshotID, true); err != nil {
+		t.Fatal(err)
+	}
+	entry, err := session.HashNamedArtifact(capability.WindowsTransportEndpointSnapshotID)
+	if err != nil || entry.Path != receipt.WindowsTransportEndpointArtifactPath || entry.Size != 3 {
+		t.Fatalf("entry=%+v err=%v", entry, err)
+	}
+	if err := session.SealNamedArtifact(capability.WindowsTransportEndpointSnapshotID, true); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFirstStagePackageSessionAbortCachesPartialCleanupFailure(t *testing.T) {
 	output := filepath.Join(t.TempDir(), "package")
 	session, err := BeginFirstStagePackage(context.Background(), output)

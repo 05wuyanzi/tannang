@@ -109,6 +109,10 @@ func (s *FirstStage) runRealSelectedWithRunner(
 		multi = candidate
 		sink, err = multi.OpenStreamingArtifact(record.Request.ID)
 	} else {
+		if record.Request.ID == capability.WindowsTransportEndpointSnapshotID {
+			setPreAttemptPackageFailure(record)
+			return fmt.Errorf("transport endpoint artifact requires a multi-artifact package session: %w", (*session).Abort())
+		}
 		sink, err = (*session).OpenArtifact()
 	}
 	if err != nil {
@@ -141,9 +145,17 @@ func (s *FirstStage) runRealSelectedWithRunner(
 			SideEffectSummary: "Provider execution occurred, but its result failed contract validation.",
 		}
 	}
+	if record.Request.ID == capability.WindowsTransportEndpointSnapshotID && executionResult.State == execution.Partial {
+		executionResult = execution.Result{
+			State:             execution.Failed,
+			Reason:            execution.ReasonProviderError,
+			Detail:            "transport endpoint Provider returned forbidden PARTIAL execution; candidate artifact was discarded.",
+			SideEffectSummary: "Transport endpoint candidate output was discarded because the v0 capability is atomic.",
+		}
+	}
 	record.Execution = cloneExecutionResult(executionResult)
 	record.MissingEvidence = missingEvidenceFor(*record)
-	retain := executionResult.State == execution.Collected || executionResult.State == execution.Partial
+	retain := executionResult.State == execution.Collected || (executionResult.State == execution.Partial && record.Request.ID != capability.WindowsTransportEndpointSnapshotID)
 	var sealErr error
 	if multi != nil {
 		sealErr = multi.SealNamedArtifact(record.Request.ID, retain)
@@ -328,6 +340,22 @@ func (s *FirstStage) finalizeReal(
 			reason := record.Decision.Reason
 			compatibilityReason = &reason
 			evaluations = append([]resolver.CandidateEvaluation(nil), record.Decision.Evaluations...)
+			expectedProvider := processIdentitySnapshotProviderID
+			switch record.Request.ID {
+			case capability.WindowsEventLogSystemChannelID:
+				expectedProvider = provider.WindowsEventLogSystemProviderID
+			case capability.WindowsHostOSIdentitySnapshotID:
+				expectedProvider = provider.WindowsHostOSIdentityProviderID
+			case capability.WindowsTransportEndpointSnapshotID:
+				expectedProvider = provider.WindowsTransportEndpointProviderID
+			}
+			filtered := evaluations[:0]
+			for _, evaluation := range evaluations {
+				if evaluation.ProviderID == expectedProvider {
+					filtered = append(filtered, evaluation)
+				}
+			}
+			evaluations = filtered
 		}
 		var artifact *receipt.ArtifactReference
 		if candidate, ok := artifactRefs[record.Request.ID]; ok {
@@ -413,6 +441,9 @@ func artifactReferenceForCapability(capabilityID string, entry integrity.Entry) 
 	if capabilityID == capability.WindowsHostOSIdentitySnapshotID {
 		return receipt.ArtifactReference{Path: receipt.WindowsHostOSIdentityArtifactPath, MediaType: receipt.WindowsHostOSIdentityArtifactMedia, ContentSchemaID: receipt.WindowsHostOSIdentityArtifactSchema, RawOrDerived: "DERIVED", Size: entry.Size, SHA256: entry.SHA256}
 	}
+	if capabilityID == capability.WindowsTransportEndpointSnapshotID {
+		return receipt.ArtifactReference{Path: receipt.WindowsTransportEndpointArtifactPath, MediaType: receipt.WindowsTransportEndpointArtifactMedia, ContentSchemaID: receipt.WindowsTransportEndpointArtifactSchema, RawOrDerived: "DERIVED", Size: entry.Size, SHA256: entry.SHA256}
+	}
 	return receipt.ArtifactReference{Path: receipt.FirstStageArtifactPath, MediaType: receipt.FirstStageArtifactMedia, ContentSchemaID: receipt.FirstStageArtifactSchema, RawOrDerived: "DERIVED", Size: entry.Size, SHA256: entry.SHA256}
 }
 
@@ -431,6 +462,11 @@ func isNilFirstStagePackageSession(session firstStagePackageSession) bool {
 
 func schemaVersionForRecords(records []CapabilityRecord) string {
 	for _, record := range records {
+		if record.Request.ID == capability.WindowsTransportEndpointSnapshotID {
+			return receipt.FirstStageV13SchemaVersion
+		}
+	}
+	for _, record := range records {
 		if record.Request.ID == capability.WindowsHostOSIdentitySnapshotID {
 			return receipt.FirstStageV12SchemaVersion
 		}
@@ -444,6 +480,11 @@ func schemaVersionForRecords(records []CapabilityRecord) string {
 }
 
 func runtimeArtifactForRecords(records []CapabilityRecord) string {
+	for _, record := range records {
+		if record.Request.ID == capability.WindowsTransportEndpointSnapshotID {
+			return receipt.FirstStageV13RuntimeArtifact
+		}
+	}
 	for _, record := range records {
 		if record.Request.ID == capability.WindowsHostOSIdentitySnapshotID {
 			return receipt.FirstStageV12RuntimeArtifact
