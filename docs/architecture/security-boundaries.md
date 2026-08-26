@@ -1,11 +1,14 @@
 # Genesis security boundaries
 
 The current event-capable candidate `collect --output` path invokes the fixed
-process-snapshot, System Event Log, and host/OS identity FirstStage path. Its
+process-snapshot, System Event Log, host/OS identity, and transport endpoint
+FirstStage path. Its
 non-removable protected baseline contains exactly `PROCESS_IDENTITY_SNAPSHOT`,
-`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`, and `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`.
-`--process-identity-snapshot`, `--windows-event-log-system`, and
-`--windows-host-os-identity` confirm the same baseline without adding requests,
+`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`, `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`, and
+`WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT`.
+`--process-identity-snapshot`, `--windows-event-log-system`,
+`--windows-host-os-identity`, and `--windows-transport-endpoints` confirm the
+same baseline without adding requests,
 while `--synthetic` remains
 a separate fixture-only path and never constructs the real FirstStage. None of
 these paths is a production-readiness claim.
@@ -50,7 +53,7 @@ is not a Linux or macOS support claim.
 
 ## Explicit process-snapshot Provider boundary
 
-The library-level `PROCESS_IDENTITY_SNAPSHOT` implementation is one of three
+The library-level `PROCESS_IDENTITY_SNAPSHOT` implementation is one of four
 narrow real Provider implementations in this slice. It observes only process ID, parent
 process ID, and executable name through the Tool Help process snapshot family.
 It retains PID 0 and parent PID 0 as observations without interpretation. It
@@ -70,13 +73,13 @@ uncommitted, and wholly discardable. The Provider cannot prove these properties
 for an arbitrary writer and does not claim rollback or truncation. Writer
 failure always makes the entire candidate sink non-retainable. Only a prefix
 ending on a complete NDJSON row may accompany `PARTIAL` caused by API failure,
-explicit cancellation, or deadline expiry. Execution `CANCELLED` is an
-attempted-Provider fact and remains distinct from application orchestration
-cancellation.
+explicit cancellation, or deadline expiry. Cancellation remains represented by
+the existing reason/orchestration fields and is distinct from an attempted
+Provider result; no new execution state is introduced.
 
 This seam gives the Provider no filesystem path, close/flush, hashing,
 publication, Receipt, Manifest, or package authority. It is reachable through
-normal `collect --output` and the three compatible explicit real flags; ordinary
+normal `collect --output` and the four compatible explicit real flags; ordinary
 tests use fake acquisition. All four product entry forms merge to the same
 code-level protected baseline and cannot request duplicate acquisition. The Provider implementation
 and its separate benign Windows acceptance have passed review.
@@ -114,7 +117,7 @@ The synthetic Finalizer boundary carries opaque references only. Existing
 synthetic Payload is not authority for real Provider artifact transport. The
 narrow process-snapshot writer seam stops at caller-owned candidate bytes and
 an execution Result; the bounded FirstStage session, not the Provider, owns the
-three-capability package lifecycle. The fixed Event Log Provider receives only a
+four-capability package lifecycle. The fixed Event Log Provider receives only a
 caller-owned protected staging file path. There is no generic workspace or
 extraction framework. The CLI validates the request and output path before
 constructing the fixed real FirstStage, invokes only that fixed constructor, and does
@@ -122,15 +125,39 @@ not expose Provider, Resolver, backend, supplemental, or baseline-removal
 selection.
 
 The integrated implementation adds only the fixed process-identity, System Event
-Log, and host/OS identity package session and its unexported deterministic test
-seam. Providers still receive only an `io.Writer`; PATHSAFE owns exclusive
+Log, host/OS identity, and transport endpoint package session and its unexported
+deterministic test seam. Providers still receive only an `io.Writer`; PATHSAFE owns exclusive
 creation, exact-file discard, and no-overwrite publication. The implementation
 claims only `PREEXISTING_REDIRECTION_SAFETY`. The active protected baseline
 remains `PUBLIC_PRE_ALPHA` and is not production ready. The event-capable branch
-adds one fixed local System Event Log artifact and one fixed host/OS identity
-artifact without broadening collection scope; bounded post-promotion real-host
+adds one fixed local System Event Log artifact, one fixed host/OS identity
+artifact, and one fixed transport endpoint artifact without broadening collection
+scope; bounded post-promotion real-host
 acceptance has passed through the default headless and thin one-click GUI paths.
 This is not a comprehensive capability, main integration, or release claim.
+
+## Fixed transport endpoint Provider boundary
+
+`WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT` is a fixed local `STATE_SNAPSHOT` whose
+only production Provider is the `FIRST_PARTY_NATIVE`
+`windows-iphlpapi-transport-endpoints` binding. It calls only
+`GetExtendedTcpTable` and `GetExtendedUdpTable` in `iphlpapi.dll` for the fixed
+TCP IPv4, TCP IPv6, UDP IPv4, and UDP IPv6 tables, retaining the raw owning PID
+field. It performs no external process execution, PowerShell, WMI, `cmd.exe`,
+`netstat.exe`, DNS or name resolution, outbound or remote network I/O, active
+trace, packet capture, scanning, probing, or adapter/route/ARP/firewall
+inventory. It performs no process enrichment, credential or secret extraction,
+automatic elevation, or security/configuration change.
+
+The Provider reads tables sequentially, preserves native row order, uses a
+bounded retry policy and bounded transient native buffers, and never silently
+truncates rows. Its candidate NDJSON bytes are retained only when all four
+required tables are acquired and serialized successfully; otherwise the
+candidate is discarded and the existing execution/finalization contract reports
+the failure truthfully. Owning PID is raw evidence only: collection makes no
+temporal or transactional correlation claim with the process snapshot, and PID
+zero for UDP means ownership information is unavailable rather than confirmed
+process identity. Network evidence is not added to Target Fingerprint fields.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It

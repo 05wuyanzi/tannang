@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**状态：** Pre-alpha · 受保护的 Windows baseline candidate 已激活 · Not production ready
+**状态：** Pre-alpha · scope-complete Technical Preview candidate · 受保护的 Windows baseline candidate 已激活 · Not production ready
 
 **简体中文** | [English](README.md)
 
@@ -13,27 +13,30 @@
 探囊是一个 Windows-first 工程项目，用于描述采集意图、评估 Provider
 兼容性、记录执行结果，并将证据与可审计的完整性元数据一起封装。
 
-普通 `collect --output` CLI 会运行固定且不可删减的受保护 baseline capability：
-`PROCESS_IDENTITY_SNAPSHOT`、`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` 与
-`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`。固定的
-`--process-identity-snapshot`、`--windows-event-log-system` 与
-`--windows-host-os-identity` 形式均保留为幂等的兼容确认，不再增加 supplemental request。
+普通 `collect --output` CLI 会按固定顺序运行四项不可删减的受保护 baseline capability：
+`PROCESS_IDENTITY_SNAPSHOT`、`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`、
+`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` 与 `WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT`。
+固定的 `--process-identity-snapshot`、`--windows-event-log-system`、
+`--windows-host-os-identity` 与 `--windows-transport-endpoints` 形式均为幂等的
+兼容确认，不会增加 supplemental request。
 显式 `--synthetic` 路径继续使用内嵌 fixture，不执行真实
 事件响应证据采集。固定真实 FirstStage 使用的有界 Windows Target Fingerprint 只读取
 少量本机兼容性、资源、权限与输出卷事实；它不是真实 Provider，不进行网络采集，也不
 代表这个 pre-alpha 仓库已具备生产就绪性。仓库 slug 和 CLI 均为 `tannang`，Go module
 为 `github.com/05wuyanzi/tannang`。
 
-仓库现在还包含三个固定、仅供库使用的窄范围 first-party native Windows
+仓库现在还包含四个固定、仅供库使用的窄范围 first-party native Windows
 Provider 实现。`PROCESS_IDENTITY_SNAPSHOT` 使用 Tool Help 进程快照 API，
 只把进程 ID、父进程 ID 与可执行文件名以 NDJSON 写入调用方拥有的 writer；固定的
 `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` 使用文档化的 Windows Event Log API，把固定本地
 `System` channel 导出为一个 EVTX artifact。`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` 使用固定的
-本机 host/OS identity API 写入一个有界 JSON artifact。三个 capability 共同组成 protected
+本机 host/OS identity API 写入一个有界 JSON artifact。`WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT`
+使用本地 Windows IP Helper 的 `GetExtendedTcpTable` 与 `GetExtendedUdpTable` API，记录带
+owning PID 的有界 TCP/UDP endpoint snapshot。四个 capability 共同组成 protected
 baseline；该 promoted baseline 已在一个精确的 Windows amd64 环境中通过 default
 headless collection 与 thin one-click GUI
 两条路径的有界真实主机 acceptance。这一有界观察不建立广义 Windows 支持矩阵。当前有界实现提供固定的库级 FirstStage 构造函数、代码级 protected-baseline
-membership 与按 capability 绑定的三 artifact Evidence Package 适配器。当前已激活的受保护 baseline 让普通 `collect --output` 使用这一固定路径；三个真实 flag
+membership 与按 capability 绑定的四 artifact Evidence Package 适配器。当前已激活的受保护 baseline 让普通 `collect --output` 使用这一固定路径；四个真实 flag
 均作为同一 baseline 的兼容显式确认，不会重复请求。
 它不暴露 Provider 选择或额外 Capability。默认测试注入 fake acquisition，不会枚举主机
 进程。Target compatibility 仅限
@@ -64,12 +67,13 @@ Provider、它是否兼容、执行时实际发生了什么，以及最终证据
 
 Pre-alpha 实现当前包括：
 
-- 带三个受保护真实 capability、显式 synthetic 路径和证据包验证的普通 CLI 采集；
+- 带四个受保护真实 capability、显式 synthetic 路径和证据包验证的普通 CLI 采集；
 - Capability 与 Target Fingerprint 模型；
 - Provider 抽象与兼容性 Resolver；
 - 固定、仅供库使用的 `PROCESS_IDENTITY_SNAPSHOT`、
-  `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` 与
-  `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` Provider 实现、同步的
+  `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`、
+  `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` 与
+  `WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT` Provider 实现、同步的
   caller-owned writer 边界及已评审的 benign Windows acceptance；
 - 位于现有 CLI 子进程边界之上的薄型原生 WinForms GUI，提供由子进程驱动的
   运行时可观测性和有界的子进程失败诊断；
@@ -121,7 +125,8 @@ Provider 合同定义了 `WINDOWS_INBOX`、`FIRST_PARTY_NATIVE` 和
 `EXTERNAL_BACKEND`。有界的 `FIRST_PARTY_NATIVE` 进程快照、Event Log 与
 Host/OS identity Provider 是普通 `collect --output` 及兼容显式确认形式使用的受保护
 Capability；`--windows-event-log-system` 不接受 channel 或 query 参数，
-`--windows-host-os-identity` 不接受字段选择参数，均不会重复请求。
+`--windows-host-os-identity` 不接受字段选择参数，`--windows-transport-endpoints` 不接受
+table 或 filter 参数；这些 flag 均不会重复请求。
 `--synthetic` 仍只可到达 `SYNTHETIC_TEST`，两种模式保持互斥。
 
 机器可读合同见 [`contracts/`](contracts/)，详细架构和安全边界见
@@ -188,12 +193,21 @@ checkout。bundle 在依赖已具备后面向 portable、offline-first 使用，
 untested。这一单行结果只是 initial evidence，不是广义 Windows support 声明；原始
 Evidence Package 与完整日志不公开。
 
+scope-complete Technical Preview candidate revision
+`c6e4c3ced7687383a4de8a29848fd3d4f48ae959`（tree
+`7742624f95d48c350ee7a8fb76180ba70f311bb4`）已在 Windows `10.0`、build
+`26200`、amd64、观察到的 non-elevated 环境中，分别完成一次默认 headless 与一次人工
+thin GUI acceptance。两条路径均达到 `COMPLETE`，生成四项受保护 baseline capability，
+并通过独立 Evidence Package verification；包为 FirstStage 1.3 / manifest 1.0，runtime
+为 `tannang-first-stage-multi-v1.3`。这是精确主机上的 candidate evidence，不是已发布的
+Technical Preview、广义 Windows 支持或生产就绪声明。
+
 ## 受保护的 Windows baseline candidate
 
-在 Windows 上，普通 `collect --output` 会运行不可删减的受保护 baseline；该 candidate
-包含 `PROCESS_IDENTITY_SNAPSHOT`、固定本地 `System` Event Log EVTX capability 与
-`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`，`--case-id` 仍为可选。三个真实形式确认同一个
-baseline 请求，不会造成重复采集、Receipt
+在 Windows 上，普通 `collect --output` 会按固定顺序运行不可删减的受保护 baseline：
+`PROCESS_IDENTITY_SNAPSHOT`、`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`、
+`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`、`WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT`。
+`--case-id` 仍为可选。四个真实形式确认同一个 baseline 请求，不会造成重复采集、Receipt
 或 artifact。每次调用都会建立独立 Collection ID 与 Evidence Package，或诚实报告部分
 完成、跳过、阻止、失败或 finalization 结果；不会提供风险评分、恶意软件 verdict、自动
 修复、凭据采集或广泛 endpoint 枚举。
@@ -207,7 +221,7 @@ go run ./cmd/tannang verify $package
 ```
 
 它只确认采集当前保留的本地 `System` channel，并写入一个原生 EVTX artifact；不接受任意
-channel、query、Event ID 过滤、远程 session 或日志配置修改。该 promoted three-capability
+channel、query、Event ID 过滤、远程 session 或日志配置修改。该 promoted four-capability
 protected baseline 已在一个精确的 Windows amd64 环境中通过 default headless 与 thin
 one-click GUI 两条路径的有界真实主机 acceptance；本分支不宣称广义 Windows 支持。
 
@@ -249,7 +263,7 @@ reports/
 值。Verifier 会拒绝缺失、被修改、多余、链接、重复、非规范、未声明或经 reparse
 重定向的包内容。
 
-详见 [Evidence package v0 与有界 FirstStage v1.2 扩展](docs/architecture/evidence-package.md)。
+详见 [Evidence package v0 与有界 FirstStage v1.3 扩展](docs/architecture/evidence-package.md)。
 
 ## 安全与采集模型
 
@@ -279,13 +293,14 @@ portable_gui_bundle_builder: true
 portable_gui_exact_acceptance: true
 real_windows_provider: true
 real_collection: true
-real_collection_scope: PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL; WINDOWS_HOST_OS_IDENTITY_SNAPSHOT
+real_collection_scope: PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL; WINDOWS_HOST_OS_IDENTITY_SNAPSHOT; WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT
 supplemental_real_capability: none
 post_promotion_eventlog_acceptance: complete_bounded_exact_host
 post_promotion_host_identity_acceptance: complete_bounded_exact_host
-default_firststage_schema: 1.2
+post_promotion_transport_endpoint_acceptance: complete_bounded_exact_host_headless_and_gui
+default_firststage_schema: 1.3
 default_manifest_version: 1.0
-default_runtime_artifact: tannang-first-stage-multi-v1.2
+default_runtime_artifact: tannang-first-stage-multi-v1.3
 firststage_real_provider_activation: true
 protected_baseline_activation: true
 production_package_adapter: true
@@ -297,8 +312,8 @@ forensic_certification: none
 judicial_validation: none
 ```
 
-普通 CLI 激活会运行固定 FirstStage 的受保护 baseline；该 candidate 包含三个已评审
-capability，且不能通过 CLI 选项删除。三个真实 flag 都是固定的确认 flag，不会重复请求受保护
+普通 CLI 激活会运行固定 FirstStage 的受保护 baseline；该 candidate 包含四个已评审
+capability，且不能通过 CLI 选项删除。四个真实 flag 都是固定的确认 flag，不会重复请求受保护
 capability。`--synthetic` 继续作为显式非真实 fixture 路径。当前版本不包含 External Backend
 集成、Packet Capture，也不支持 Legacy/Heritage Windows runtime。
 Synthetic fixture 中的 `LEGACY` 与 `HERITAGE` 只是测试输入，不代表支持声明。
@@ -308,8 +323,8 @@ Synthetic fixture 中的 `LEGACY` 与 `HERITAGE` 只是测试输入，不代表�
 
 当前 synthetic `execution.Result.Payload` 只是 fixture 兼容机制，并不是未来真实
 Provider 的制品传输合同。真实 Provider 只接受调用方拥有的 staging seam：进程快照使用同步
-writer，固定 Event Log Provider 接收一个受保护的绝对文件路径，Host Provider 写入一个有界 JSON
-对象。有界 FirstStage 适配器为这三个已知 artifact binding 负责 path、close/flush、retain/discard、Hash 与发布；它不是
+writer，固定 Event Log Provider 接收一个受保护的绝对文件路径，Host 与 transport Provider 写入有界观察。
+有界 FirstStage 适配器为这四个已知 artifact binding 负责 path、close/flush、retain/discard、Hash 与发布；它不是
 通用 workspace 或 extraction framework。
 
 ## 路线图
@@ -326,6 +341,9 @@ M4 Minimum Useful Baseline 已在 `dev` 上通过现有受保护的
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md) 中的验收合同。
 这不等于已发布 RC、通用 Windows 家族支持矩阵或生产就绪；`RC_READY=false` 与
 `production_ready=false` 仍明确保持。TUI 保持 HOLD。
+
+未来 Technical Preview 发布后，维护范围计划聚焦于正确性、安全性、Windows 兼容性以及
+构建/证据包完整性；当前没有计划扩展为广泛的取证能力。
 首个 Event Log capability 已作为受保护的 System Event Log baseline 实现，后续 Host/OS identity
 promotion 也已实现；两者的有界 post-promotion benign Windows acceptance 均已通过两条产品路径。
 
