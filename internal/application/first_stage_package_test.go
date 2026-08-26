@@ -28,11 +28,12 @@ import (
 )
 
 type fakeStreamingRunner struct {
-	descriptor provider.Descriptor
-	result     execution.Result
-	artifact   []byte
-	execute    func(context.Context, io.Writer) execution.Result
-	calls      int
+	descriptor         provider.Descriptor
+	artifactDescriptor provider.ArtifactDescriptor
+	result             execution.Result
+	artifact           []byte
+	execute            func(context.Context, io.Writer) execution.Result
+	calls              int
 }
 
 type failingWriter struct{}
@@ -43,6 +44,9 @@ func (failingWriter) Write([]byte) (int, error) {
 
 func (f *fakeStreamingRunner) Descriptor() provider.Descriptor { return cloneDescriptor(f.descriptor) }
 func (f *fakeStreamingRunner) Artifact() provider.ArtifactDescriptor {
+	if f.artifactDescriptor.MediaType != "" {
+		return f.artifactDescriptor
+	}
 	return provider.ArtifactDescriptor{MediaType: receipt.FirstStageArtifactMedia, ContentSchemaID: receipt.FirstStageArtifactSchema}
 }
 func (f *fakeStreamingRunner) ExecuteTo(ctx context.Context, _ capability.Capability, _ fingerprint.TargetFingerprint, writer io.Writer) execution.Result {
@@ -147,24 +151,31 @@ func (f *fakeFirstStageFactory) begin(_ context.Context, _ string) (firstStagePa
 
 type fakeMultiArtifactSession struct {
 	fakeFirstStageSession
-	streamOpenCalls int
-	reserveCalls    int
-	discardCalls    int
-	processRetained bool
-	eventReserved   bool
-	eventSealed     bool
-	eventSealErr    error
-	stagingPath     string
-	onReserve       func()
+	streamOpenCalls  int
+	reserveCalls     int
+	discardCalls     int
+	processRetained  bool
+	hostRetained     bool
+	hostFailed       bool
+	eventReserved    bool
+	eventSealed      bool
+	eventRetained    bool
+	allowEventRetain bool
+	eventSealErr     error
+	stagingPath      string
+	onReserve        func()
 }
 
 func (f *fakeMultiArtifactSession) OpenStreamingArtifact(capabilityID string) (io.Writer, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if capabilityID != capability.ProcessIdentitySnapshotID {
+	if capabilityID != capability.ProcessIdentitySnapshotID && capabilityID != capability.WindowsHostOSIdentitySnapshotID {
 		return nil, errors.New("unexpected streaming artifact capability")
 	}
 	f.streamOpenCalls++
+	if capabilityID == capability.WindowsHostOSIdentitySnapshotID {
+		f.hostFailed = false
+	}
 	return &f.buffer, nil
 }
 
@@ -201,14 +212,22 @@ func (f *fakeMultiArtifactSession) SealNamedArtifact(capabilityID string, retain
 	case capability.ProcessIdentitySnapshotID:
 		f.processRetained = retain
 		return nil
+	case capability.WindowsHostOSIdentitySnapshotID:
+		f.hostRetained = retain
+		return nil
 	case capability.WindowsEventLogSystemChannelID:
 		if !f.eventReserved {
 			return errors.New("file artifact was not reserved")
 		}
 		f.discardCalls++
 		f.eventSealed = true
-		if retain {
+		if retain && !f.allowEventRetain {
 			return errors.New("test Event Log artifact must not be retained in this seam")
+		}
+		if retain {
+			f.eventRetained = true
+			f.eventSealed = true
+			return nil
 		}
 		return f.eventSealErr
 	default:
@@ -219,11 +238,17 @@ func (f *fakeMultiArtifactSession) SealNamedArtifact(capabilityID string, retain
 func (f *fakeMultiArtifactSession) HashNamedArtifact(capabilityID string) (integrity.Entry, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	if capabilityID != capability.ProcessIdentitySnapshotID || !f.processRetained {
+	if (capabilityID == capability.ProcessIdentitySnapshotID && !f.processRetained) || (capabilityID == capability.WindowsHostOSIdentitySnapshotID && !f.hostRetained) || (capabilityID == capability.WindowsEventLogSystemChannelID && !f.eventRetained) || (capabilityID != capability.ProcessIdentitySnapshotID && capabilityID != capability.WindowsHostOSIdentitySnapshotID && capabilityID != capability.WindowsEventLogSystemChannelID) {
 		return integrity.Entry{}, errors.New("process artifact was not retained")
 	}
 	digest := sha256.Sum256(f.buffer.Bytes())
-	return integrity.Entry{Path: receipt.FirstStageArtifactPath, Size: int64(f.buffer.Len()), SHA256: hex.EncodeToString(digest[:])}, nil
+	path := receipt.FirstStageArtifactPath
+	if capabilityID == capability.WindowsHostOSIdentitySnapshotID {
+		path = receipt.WindowsHostOSIdentityArtifactPath
+	} else if capabilityID == capability.WindowsEventLogSystemChannelID {
+		path = receipt.WindowsEventLogSystemArtifactPath
+	}
+	return integrity.Entry{Path: path, Size: int64(f.buffer.Len()), SHA256: hex.EncodeToString(digest[:])}, nil
 }
 
 type fakeMultiArtifactFactory struct {
@@ -238,6 +263,22 @@ func (f *fakeMultiArtifactFactory) begin(_ context.Context, _ string) (firstStag
 
 type cancellationFileArtifactRunner struct {
 	calls int
+}
+
+type acceptedFileArtifactRunner struct{ calls int }
+
+func (r *acceptedFileArtifactRunner) Descriptor() provider.Descriptor {
+	return (&cancellationFileArtifactRunner{}).Descriptor()
+}
+func (r *acceptedFileArtifactRunner) Artifact() provider.ArtifactDescriptor {
+	return provider.ArtifactDescriptor{MediaType: receipt.WindowsEventLogSystemMediaType, ContentSchemaID: receipt.WindowsEventLogSystemSchemaID}
+}
+func (r *acceptedFileArtifactRunner) ExecuteToPath(_ context.Context, _ capability.Capability, _ fingerprint.TargetFingerprint, path string) execution.Result {
+	r.calls++
+	if err := os.WriteFile(path, []byte("EVTX-TEST"), 0o600); err != nil {
+		return execution.Result{State: execution.Failed, Reason: execution.ReasonProviderError, SideEffectSummary: "test Event Log write failed"}
+	}
+	return execution.Result{State: execution.Collected, Reason: execution.ReasonNone, SideEffectSummary: "test Event Log Provider executed"}
 }
 
 func (r *cancellationFileArtifactRunner) Descriptor() provider.Descriptor {
@@ -275,6 +316,163 @@ func newRealEventLogTestStage(t *testing.T, process provider.StreamingRunner, ev
 		t.Fatalf("construct real Event Log test stage: %v", err)
 	}
 	return stage
+}
+
+func newRealHostTestStage(t *testing.T, process, host provider.StreamingRunner, event provider.FileArtifactRunner, factory firstStagePackageFactory) *FirstStage {
+	t.Helper()
+	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
+		StreamingRunner: process, HostIdentityRunner: host, EventLogRunner: event,
+		FingerprintProbe: func(context.Context, string) (fingerprint.TargetFingerprint, error) { return testFingerprint(), nil },
+		PackageFactory:   factory, Clock: testNow, CollectionID: func() (string, error) { return testCollectionID, nil },
+	})
+	if err != nil {
+		t.Fatalf("construct real host identity test stage: %v", err)
+	}
+	return stage
+}
+
+func TestRealFirstStageProtectedHostUsesV12AndRetainsBaselineArtifacts(t *testing.T) {
+	process := newFakeStreamingRunner()
+	host := newFakeHostStreamingRunner()
+	event := &acceptedFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
+	request := realRunRequest(t)
+	result, err := stage.Run(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunComplete || !result.FinalizationVerified || len(result.Records) != 3 {
+		t.Fatalf("result=%+v", result)
+	}
+	if session.metadata.SchemaVersion != receipt.FirstStageV12SchemaVersion || session.metadata.RuntimeArtifact != receipt.FirstStageV12RuntimeArtifact || len(session.metadata.ReceiptReferences) != 3 {
+		t.Fatalf("metadata=%+v", session.metadata)
+	}
+	if session.metadata.ArtifactReferences == nil || len(session.metadata.ArtifactReferences) != 3 {
+		t.Fatalf("artifact refs=%+v", session.metadata.ArtifactReferences)
+	}
+	if host.calls != 1 || !session.hostRetained || !session.processRetained || !session.eventRetained {
+		t.Fatalf("retention host=%v process=%v event=%v calls=%d", session.hostRetained, session.processRetained, session.eventRetained, host.calls)
+	}
+	for _, record := range result.Records {
+		if record.Request.ID == capability.WindowsHostOSIdentitySnapshotID && !record.Request.Protected {
+			t.Fatalf("host request was not protected: %+v", record.Request)
+		}
+	}
+}
+
+func TestRealFirstStageHostFailurePreservesBaselineAndOmitsHostArtifact(t *testing.T) {
+	process := newFakeStreamingRunner()
+	host := newFakeHostStreamingRunner()
+	host.result = execution.Result{State: execution.Failed, Reason: execution.ReasonProviderError, SideEffectSummary: "Fake host failure."}
+	event := &acceptedFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
+	request := realRunRequest(t)
+	result, err := stage.Run(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunPartial || !result.FinalizationVerified || len(result.Records) != 3 {
+		t.Fatalf("result=%+v", result)
+	}
+	for _, record := range result.Records {
+		switch record.Request.ID {
+		case capability.ProcessIdentitySnapshotID, capability.WindowsEventLogSystemChannelID:
+			if record.Execution.State != execution.Collected || record.ArtifactReference == "" {
+				t.Fatalf("baseline record=%+v", record)
+			}
+		case capability.WindowsHostOSIdentitySnapshotID:
+			if !record.Request.Protected || record.Execution.State != execution.Failed || record.ArtifactReference != "" || len(record.MissingEvidence) == 0 {
+				t.Fatalf("host record=%+v", record)
+			}
+		}
+	}
+	if len(session.metadata.ArtifactReferences) != 2 || session.hostRetained {
+		t.Fatalf("metadata=%+v hostRetained=%v", session.metadata, session.hostRetained)
+	}
+}
+
+func TestRealFirstStageProtectedHostUnavailablePreservesBaseline(t *testing.T) {
+	process := newFakeStreamingRunner()
+	host := newFakeHostStreamingRunner()
+	host.descriptor.Requirements.Available = false
+	host.descriptor.Requirements.AvailabilityReason = execution.ReasonAPIUnavailable
+	event := &acceptedFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
+	result, err := stage.Run(context.Background(), realRunRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunPartial || !result.FinalizationVerified || len(result.Records) != 3 {
+		t.Fatalf("result=%+v", result)
+	}
+	for _, record := range result.Records {
+		switch record.Request.ID {
+		case capability.ProcessIdentitySnapshotID, capability.WindowsEventLogSystemChannelID:
+			if record.Execution.State != execution.Collected || record.ArtifactReference == "" {
+				t.Fatalf("baseline record=%+v", record)
+			}
+		case capability.WindowsHostOSIdentitySnapshotID:
+			if !record.Request.Protected || record.Compatibility != execution.Unavailable || record.Execution.State != execution.Skipped || record.ArtifactReference != "" {
+				t.Fatalf("unavailable host record=%+v", record)
+			}
+		}
+	}
+	if len(session.metadata.ArtifactReferences) != 2 || session.hostRetained {
+		t.Fatalf("metadata=%+v hostRetained=%v", session.metadata, session.hostRetained)
+	}
+}
+
+func TestRealFirstStageProtectedHostBlockedPreservesBaseline(t *testing.T) {
+	process := newFakeStreamingRunner()
+	host := newFakeHostStreamingRunner()
+	host.result = execution.Result{State: execution.Blocked, Reason: execution.ReasonPrivilegeRequired, SideEffectSummary: "Fake host access was blocked."}
+	event := &acceptedFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
+	result, err := stage.Run(context.Background(), realRunRequest(t))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunPartial || !result.FinalizationVerified || len(result.Records) != 3 {
+		t.Fatalf("result=%+v", result)
+	}
+	hostRecord := result.Records[2]
+	if hostRecord.Request.ID != capability.WindowsHostOSIdentitySnapshotID || !hostRecord.Request.Protected || hostRecord.Execution.State != execution.Blocked || hostRecord.Execution.Reason != execution.ReasonPrivilegeRequired || hostRecord.ArtifactReference != "" {
+		t.Fatalf("blocked host record=%+v", hostRecord)
+	}
+	if result.Records[0].Execution.State != execution.Collected || result.Records[1].Execution.State != execution.Collected || len(session.metadata.ArtifactReferences) != 2 || session.hostRetained {
+		t.Fatalf("baseline retention result=%+v metadata=%+v hostRetained=%v", result.Records, session.metadata, session.hostRetained)
+	}
+}
+
+func TestRealFirstStageHostCancellationDiscardsHostArtifact(t *testing.T) {
+	process := newFakeStreamingRunner()
+	host := newFakeHostStreamingRunner()
+	host.execute = func(_ context.Context, writer io.Writer) execution.Result {
+		if _, err := writer.Write([]byte(`{"computer_name":"HOST"}`)); err != nil {
+			t.Fatalf("host test write: %v", err)
+		}
+		return execution.Result{State: execution.Failed, Reason: execution.ReasonCancelled, SideEffectSummary: "Fake host cancellation."}
+	}
+	event := &acceptedFileArtifactRunner{}
+	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
+	stage := newRealHostTestStage(t, process, host, event, (&fakeMultiArtifactFactory{session: session}).begin)
+	request := realRunRequest(t)
+	result, err := stage.Run(context.Background(), request)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunPartial || !result.FinalizationVerified || len(session.metadata.ArtifactReferences) != 2 || session.hostRetained {
+		t.Fatalf("result=%+v metadata=%+v hostRetained=%v", result, session.metadata, session.hostRetained)
+	}
+	for _, record := range result.Records {
+		if record.Request.ID == capability.WindowsHostOSIdentitySnapshotID && (record.Execution.State != execution.Failed || record.Execution.Reason != execution.ReasonCancelled || record.ArtifactReference != "") {
+			t.Fatalf("host cancellation record=%+v", record)
+		}
+	}
 }
 
 func TestRealFirstStageEventLogPreExecutionCancellationDiscardsReservedArtifact(t *testing.T) {
@@ -763,6 +961,20 @@ func newFakeStreamingRunner() *fakeStreamingRunner {
 		},
 		artifact: []byte("{\"process_id\":1,\"parent_process_id\":0,\"executable_name\":\"fixture.exe\"}\n"),
 		result:   execution.Result{State: execution.Collected, Reason: execution.ReasonNone, SideEffectSummary: "Fake process snapshot completed."},
+	}
+}
+
+func newFakeHostStreamingRunner() *fakeStreamingRunner {
+	return &fakeStreamingRunner{
+		descriptor: provider.Descriptor{
+			ID: provider.WindowsHostOSIdentityProviderID, Class: provider.FirstPartyNative,
+			Capabilities: []string{capability.WindowsHostOSIdentitySnapshotID},
+			Requirements: provider.Requirements{Platforms: []string{"windows"}, OSFamilies: []string{"WindowsNT"}, Architectures: []string{"amd64"}, Available: true, AvailabilityReason: execution.ReasonNone},
+			Quality:      provider.Quality{Compatibility: execution.Available, Reason: execution.ReasonNone, Fidelity: 4, Completeness: 4, OutputStability: 5, EvidenceValue: 4},
+		},
+		artifact:           []byte(`{"computer_name":"HOST","os_major":10,"os_minor":0,"os_build":1,"native_architecture":"amd64"}`),
+		artifactDescriptor: provider.ArtifactDescriptor{MediaType: provider.WindowsHostOSIdentityMediaType, ContentSchemaID: provider.WindowsHostOSIdentitySchemaID},
+		result:             execution.Result{State: execution.Collected, Reason: execution.ReasonNone, SideEffectSummary: "Fake host identity completed."},
 	}
 }
 

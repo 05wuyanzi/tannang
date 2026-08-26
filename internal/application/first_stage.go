@@ -166,6 +166,7 @@ type FirstStage struct {
 	realMode               bool
 	streamingRunner        provider.StreamingRunner
 	streamingDescriptor    provider.Descriptor
+	streamingRunners       map[string]provider.StreamingRunner
 	fileRunners            map[string]provider.FileArtifactRunner
 	availabilityProbers    map[string]provider.AvailabilityProber
 	packageFactory         firstStagePackageFactory
@@ -426,7 +427,16 @@ func (s *FirstStage) Run(ctx context.Context, request RunRequest) (RunResult, er
 			if runner, ok := s.fileRunners[record.Request.ID]; ok {
 				runErr = s.runRealFileSelected(ctx, collection, target, record, runner, &realSession, &cancelled)
 			} else {
-				runErr = s.runRealSelected(ctx, collection, target, record, &realSession, &cancelled)
+				runner, exists := s.streamingRunners[record.Request.ID]
+				if !exists && record.Request.ID == capability.ProcessIdentitySnapshotID {
+					runner = s.streamingRunner
+					exists = runner != nil
+				}
+				if !exists {
+					runErr = errors.New("no trusted streaming Provider is bound to the selected capability")
+				} else {
+					runErr = s.runRealSelectedWithRunner(ctx, collection, target, record, runner, &realSession, &cancelled)
+				}
 			}
 			if runErr != nil {
 				if packageFailureErr == nil {
@@ -805,13 +815,20 @@ func validateCollectionID(value string) error {
 
 func mergeRequests(baseline, supplemental []capability.CapabilityRequest) []capability.CapabilityRequest {
 	merged := make(map[string]capability.CapabilityRequest, len(baseline)+len(supplemental))
+	protectedBaselineIDs := make(map[string]struct{}, len(baseline))
 	for _, request := range baseline {
 		merged[request.ID] = request
+		if request.Protected {
+			protectedBaselineIDs[request.ID] = struct{}{}
+		}
 	}
 	for _, request := range supplemental {
 		existing, exists := merged[request.ID]
 		if !exists {
 			merged[request.ID] = request
+			continue
+		}
+		if _, protectedBaseline := protectedBaselineIDs[request.ID]; protectedBaseline {
 			continue
 		}
 		if request.Priority.Order() < existing.Priority.Order() {

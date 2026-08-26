@@ -2,20 +2,21 @@
 
 Tannang is a Windows-first, platform-extensible evidence orchestration project.
 Normal CLI collection activates the event-capable fixed real FirstStage with
-two non-removable protected baseline capabilities:
-`PROCESS_IDENTITY_SNAPSHOT` and `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`. The fixed
-Event Log form is an idempotent confirmation flag. The explicit synthetic path remains separate and
+three non-removable protected baseline capabilities:
+`PROCESS_IDENTITY_SNAPSHOT`, `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`, and
+`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`. The three fixed real-only forms are
+idempotent confirmation flags. The explicit synthetic path remains separate and
 continues to prove the generic control path with embedded data:
 
 ```text
 CLI --synthetic -> Capability -> Target Fingerprint -> Resolver -> Synthetic Provider
     -> Execution Result -> Receipt -> Evidence Package -> SHA-256 Verification
 
-CLI collect --output -> fixed process + System Event Log FirstStage
-    -> Tool Help + wevtapi Providers -> receipts + artifacts -> Evidence Package verification
+CLI collect --output -> fixed process + System Event Log + host/OS FirstStage
+    -> Tool Help + wevtapi + native host APIs -> receipts + artifacts -> Evidence Package verification
 
 CLI collect --windows-event-log-system -> same protected baseline (confirmation only)
-    -> run-scoped wevtapi probe -> native EVTX artifact -> v1.1 receipts + manifest verification
+    -> run-scoped wevtapi probe -> native EVTX artifact -> v1.2 receipts + manifest verification
 ```
 
 Capability and Provider are separate contracts. A user asks for evidence by
@@ -84,10 +85,10 @@ discard. Writer failure always returns `FAILED/PROVIDER_ERROR`, never
 Execution `CANCELLED` means an attempted Provider was explicitly cancelled.
 It is separate from application `OrchestrationReason=CANCELLED`, which also
 accounts for selected work that was never launched. Normal `collect --output`
-and the compatible explicit `--process-identity-snapshot` form both use the same
-fixed constructor and code-level protected-baseline membership. The explicit
-flag adds no supplemental request, so the protected two-capability package
-adapter still executes each accepted capability exactly once. Default
+and the three compatible explicit real forms use the same fixed constructor and
+code-level protected-baseline membership. Each explicit flag adds no supplemental
+request, so the protected three-capability package adapter executes each accepted
+capability exactly once. Default
 tests use fake acquisition and do not enumerate host processes.
 
 ## Fixed System Event Log baseline capability
@@ -109,10 +110,28 @@ retained as the opaque RAW artifact
 `raw/windows-event-log-system.evtx` with media type `application/x-evtx`.
 An empty but valid EVTX export is still `COLLECTED`; it is not an incident
 judgment. The confirmation flag is mutually exclusive with `--synthetic` and
-does not add a duplicate request. The promoted two-capability baseline has
-passed bounded real-host acceptance on one Windows 11 25H2 amd64 environment
+does not add a duplicate request. The promoted three-capability baseline has
+passed bounded real-host acceptance on one exact Windows amd64 environment
 through both the default headless and thin one-click GUI paths; this does not
 establish a general Windows support matrix.
+
+## Fixed Windows host/OS identity capability
+
+`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` is a fixed protected `STATE_SNAPSHOT`
+Capability. Its only production binding is the `FIRST_PARTY_NATIVE` Provider
+`windows-native-host-os-identity`, which uses `GetComputerNameExW` with
+`ComputerNamePhysicalDnsHostname`, `RtlGetVersion`, and `GetNativeSystemInfo`.
+It performs no inventory expansion, privilege escalation, network access, child
+process execution, or configuration change.
+
+The Provider writes one bounded JSON observation to the caller-owned sink. The
+package adapter publishes it as the `DERIVED` artifact
+`derived/windows-host-os-identity.json` with media type `application/json` and
+content schema `urn:tannang:artifact:windows-host-os-identity-json-v0`. The exact
+fields are `computer_name`, `os_major`, `os_minor`, `os_build`, and
+`native_architecture`. The three real confirmation flags
+`--process-identity-snapshot`, `--windows-event-log-system`, and
+`--windows-host-os-identity` are confirmation-only and idempotent.
 
 ## First-stage orchestration contract
 
@@ -149,18 +168,17 @@ prerequisites already succeeded.
 The synthetic Finalizer seam accepts copy-isolated accounting facts and returns
 only verification, package, receipt, and optional artifact references. It
 remains behaviorally unchanged and uses fakes in tests. The real production
-binding supports only the two known capability-keyed artifacts: process NDJSON
-and the fixed System-channel EVTX export. It is not a generic workspace or
+binding supports only the three known capability-keyed artifacts: process NDJSON,
+the fixed System-channel EVTX export, and host/OS identity JSON. It is not a generic workspace or
 extraction framework. Existing synthetic Payload remains fixture compatibility
 only; Provider output itself is not package authority.
 
 The implementation supplies private fake seams and fixed production bindings
-for the protected process baseline plus the protected System Event Log
-capability. Its
-package session owns one guarded staging tree, up to the two known artifacts,
-receipts, manifest verification, and no-overwrite publication. The integrated
-activation makes both capabilities the normal CLI's protected baseline;
-the Event Log flag is fixed and confirmation-only;
+for the three protected baseline capabilities. Its package session owns one
+guarded staging tree, up to the three known artifacts, receipts, manifest
+verification, and no-overwrite publication. The integrated activation makes all
+three capabilities the normal CLI's protected baseline; all three real flags are
+fixed and confirmation-only;
 `--synthetic` bypasses the real factory, while the explicit real flag confirms
 the same baseline without duplication. The CLI returns a bounded health summary
 rather than a serialized `RunResult` or Provider payload. This remains
@@ -169,4 +187,5 @@ Minimum Useful Baseline is complete on `dev` with the process capability. The
 Event Log baseline promotion is implemented on this candidate and its
 bounded post-promotion benign Windows acceptance has passed through both
 product paths; neither state is a comprehensive capability, main-integration,
-or release-completion claim.
+or release-completion claim. Host/OS identity promotion and its bounded
+post-promotion acceptance use the same non-production boundary.

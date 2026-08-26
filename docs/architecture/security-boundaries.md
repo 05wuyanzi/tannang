@@ -1,10 +1,11 @@
 # Genesis security boundaries
 
 The current event-capable candidate `collect --output` path invokes the fixed
-process-snapshot plus System Event Log FirstStage path. Its non-removable
-protected baseline contains exactly `PROCESS_IDENTITY_SNAPSHOT` and
-`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`. `--process-identity-snapshot` and
-`--windows-event-log-system` confirm the same baseline without adding requests,
+process-snapshot, System Event Log, and host/OS identity FirstStage path. Its
+non-removable protected baseline contains exactly `PROCESS_IDENTITY_SNAPSHOT`,
+`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`, and `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`.
+`--process-identity-snapshot`, `--windows-event-log-system`, and
+`--windows-host-os-identity` confirm the same baseline without adding requests,
 while `--synthetic` remains
 a separate fixture-only path and never constructs the real FirstStage. None of
 these paths is a production-readiness claim.
@@ -49,7 +50,7 @@ is not a Linux or macOS support claim.
 
 ## Explicit process-snapshot Provider boundary
 
-The library-level `PROCESS_IDENTITY_SNAPSHOT` implementation is one of two
+The library-level `PROCESS_IDENTITY_SNAPSHOT` implementation is one of three
 narrow real Provider implementations in this slice. It observes only process ID, parent
 process ID, and executable name through the Tool Help process snapshot family.
 It retains PID 0 and parent PID 0 as observations without interpretation. It
@@ -75,10 +76,23 @@ cancellation.
 
 This seam gives the Provider no filesystem path, close/flush, hashing,
 publication, Receipt, Manifest, or package authority. It is reachable through
-normal `collect --output` and the compatible explicit real flag; ordinary tests
-use fake acquisition. Both CLI forms merge to the same code-level protected
-baseline and cannot request duplicate acquisition. The Provider implementation
+normal `collect --output` and the three compatible explicit real flags; ordinary
+tests use fake acquisition. All four product entry forms merge to the same
+code-level protected baseline and cannot request duplicate acquisition. The Provider implementation
 and its separate benign Windows acceptance have passed review.
+
+## Fixed host/OS identity Provider boundary
+
+`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` is a fixed local `STATE_SNAPSHOT` with the
+`FIRST_PARTY_NATIVE` Provider `windows-native-host-os-identity`. It calls only
+`GetComputerNameExW(ComputerNamePhysicalDnsHostname)`, `RtlGetVersion`, and
+`GetNativeSystemInfo`, then writes exactly one bounded JSON object containing
+`computer_name`, `os_major`, `os_minor`, `os_build`, and
+`native_architecture` to the caller-owned sink. It requires no elevation by
+design and performs no network access, child-process execution, inventory
+expansion, registry/configuration write, or secret collection. Host evidence is
+separate from the Target Fingerprint; the fingerprint remains compatibility
+context and does not receive these artifact fields.
 
 The library-only FirstStage contract adds coordination around explicitly
 bounded collection. Existing `NewFirstStage` construction still admits only
@@ -100,23 +114,23 @@ The synthetic Finalizer boundary carries opaque references only. Existing
 synthetic Payload is not authority for real Provider artifact transport. The
 narrow process-snapshot writer seam stops at caller-owned candidate bytes and
 an execution Result; the bounded FirstStage session, not the Provider, owns the
-two-capability package lifecycle. The fixed Event Log Provider receives only a
+three-capability package lifecycle. The fixed Event Log Provider receives only a
 caller-owned protected staging file path. There is no generic workspace or
 extraction framework. The CLI validates the request and output path before
 constructing the fixed real FirstStage, invokes only that fixed constructor, and does
 not expose Provider, Resolver, backend, supplemental, or baseline-removal
 selection.
 
-The integrated implementation adds only the fixed process-identity and System
-Event Log package session and its unexported deterministic test seam. Providers still
-receive only an `io.Writer`; PATHSAFE owns exclusive creation, exact-file
-discard, and no-overwrite publication. The implementation claims only
-`PREEXISTING_REDIRECTION_SAFETY`. The active protected baseline remains
-`PUBLIC_PRE_ALPHA` and is not production ready. The event-capable branch adds
-one fixed local System Event Log artifact without broadening collection scope;
-its bounded post-promotion real-host acceptance has passed through the default
-headless and thin one-click GUI paths. This is not a comprehensive capability,
-main integration, or release claim.
+The integrated implementation adds only the fixed process-identity, System Event
+Log, and host/OS identity package session and its unexported deterministic test
+seam. Providers still receive only an `io.Writer`; PATHSAFE owns exclusive
+creation, exact-file discard, and no-overwrite publication. The implementation
+claims only `PREEXISTING_REDIRECTION_SAFETY`. The active protected baseline
+remains `PUBLIC_PRE_ALPHA` and is not production ready. The event-capable branch
+adds one fixed local System Event Log artifact and one fixed host/OS identity
+artifact without broadening collection scope; bounded post-promotion real-host
+acceptance has passed through the default headless and thin one-click GUI paths.
+This is not a comprehensive capability, main integration, or release claim.
 
 The current Windows baseline blocks pre-existing reparse-point, junction, and
 symbolic-link redirection for synthetic package creation and verification. It

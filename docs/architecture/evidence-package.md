@@ -1,4 +1,4 @@
-# Evidence package v0 and FirstStage v1.1 multi-artifact extension
+# Evidence package v0 and FirstStage v1.2 multi-artifact extension
 
 Every package has this fixed top-level layout:
 
@@ -52,8 +52,9 @@ Synthetic orchestration tests use fake Finalizers and require no filesystem
 materialization. The seam does not define artifact bytes, paths, readers,
 streams, workspaces, package layout, or hashing. `evidence.Create` remains the
 single-capability synthetic implementation above. The fixed real FirstStage
-binding adds a bounded v1.1 package shape for at most the two known real
-artifacts; it is not a generic workspace manager.
+binding adds the bounded v1.2 package shape for the three known real artifacts;
+it is not a generic workspace manager. Historical v1.1 packages remain a
+separately verifiable compatibility contract.
 
 ## Process identity snapshot writer boundary
 
@@ -76,19 +77,38 @@ the per-record schema ID. It defines no RAW/DERIVED classification. The
 package adapter, not the Provider, owns PATHSAFE staging, path choice,
 close/flush, retain/discard enforcement, SHA-256, Artifact and Receipt
 references, Manifest creation, and publication. The bounded FirstStage
-candidate implements that authority for the process identity artifact and the
-fixed System Event Log EVTX artifact in the promoted protected baseline;
+candidate implements that authority for the process identity, fixed System
+Event Log EVTX, and host/OS identity JSON artifacts in the promoted protected
+baseline;
 Provider output alone remains an unpublished observation or file.
 
 The bounded FirstStage adapter keeps historical v0 process-only packages
 verifiable. The protected `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` capability uses
-v1.1 receipt/package semantics, reserves
+v1.2 receipt/package semantics for new promoted collections, reserves
 `raw/windows-event-log-system.evtx` inside the protected staging root, retains
 only a successfully exported ordinary file, publishes one receipt per
 accepted request, verifies the unchanged v1.0 SHA-256 Manifest, and keeps the
-downstream handoff disabled. The promoted two-capability baseline has passed
+downstream handoff disabled. The promoted three-capability baseline has passed
 bounded post-promotion benign real-host acceptance; this remains not a
 production-readiness claim.
 Historical v1.1 supplemental Event Log receipts with `protected=false` remain
 valid for backward-compatible verification; promotion changes default activation
 for new real collections, not the validity of prior evidence.
+
+## Host/OS identity artifact binding
+
+`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` uses `STATE_SNAPSHOT` semantics and the
+fixed `FIRST_PARTY_NATIVE` Provider `windows-native-host-os-identity`. Its
+caller-owned artifact is `derived/windows-host-os-identity.json`, classified as
+`DERIVED`, with media type `application/json` and content schema
+`urn:tannang:artifact:windows-host-os-identity-json-v0`. The JSON object contains
+exactly `computer_name`, `os_major`, `os_minor`, `os_build`, and
+`native_architecture`. The Provider uses local Windows APIs only and does not
+choose paths, hash bytes, publish references, or alter host configuration.
+
+New normal collections use FirstStage schema `1.2`, manifest `1.0`, and runtime
+artifact `tannang-first-stage-multi-v1.2`. Verification continues to accept
+historical process-only v1.0 packages, two-capability v1.1 packages, historical
+Event Log `protected=false` v1.1 receipts, and R82 host/OS identity
+`protected=false` v1.2 receipts. The verifier must retain that historical context
+while requiring current promoted baseline receipts to record `protected=true`.

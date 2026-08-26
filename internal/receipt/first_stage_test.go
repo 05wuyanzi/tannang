@@ -231,6 +231,74 @@ func TestFirstStageMultiEventLogReceiptAndMetadataValidate(t *testing.T) {
 	}
 }
 
+func TestFirstStageV12HostIdentityProtectionAndOwnership(t *testing.T) {
+	record := validFirstStageReceipt()
+	definition := capability.WindowsHostOSIdentitySnapshot()
+	reason := execution.ReasonNone
+	record.SchemaVersion = FirstStageV12SchemaVersion
+	record.RuntimeArtifact = FirstStageV12RuntimeArtifact
+	record.RequestedCapability = capability.CapabilityRequest{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate, Protected: false}
+	record.Capability = &definition
+	record.SelectedProvider = &ProviderIdentity{ID: "windows-native-host-os-identity", Class: provider.FirstPartyNative}
+	record.CompatibilityReason = &reason
+	record.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: "windows-native-host-os-identity", Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true}}
+	record.ArtifactReference = &ArtifactReference{Path: WindowsHostOSIdentityArtifactPath, MediaType: WindowsHostOSIdentityArtifactMedia, ContentSchemaID: WindowsHostOSIdentityArtifactSchema, RawOrDerived: "DERIVED", Size: 32, SHA256: strings.Repeat("c", 64)}
+	if err := record.Validate(); err != nil {
+		t.Fatalf("valid v1.2 host receipt rejected: %v", err)
+	}
+	promoted := record
+	promoted.RequestedCapability.Protected = true
+	if err := promoted.Validate(); err != nil {
+		t.Fatalf("promoted host receipt rejected: %v", err)
+	}
+	wrongDefinition := record
+	definitionCopy := *record.Capability
+	definitionCopy.Sensitivity = "low"
+	wrongDefinition.Capability = &definitionCopy
+	if err := wrongDefinition.Validate(); err == nil {
+		t.Fatal("mismatched v1.2 host capability definition unexpectedly validated")
+	}
+	wrongArtifact := record
+	artifact := *record.ArtifactReference
+	artifact.Path = FirstStageArtifactPath
+	wrongArtifact.ArtifactReference = &artifact
+	if err := wrongArtifact.Validate(); err == nil {
+		t.Fatal("cross-capability artifact reference unexpectedly validated")
+	}
+	wrongProvider := record
+	wrongProvider.SelectedProvider = &ProviderIdentity{ID: "arbitrary-provider", Class: provider.FirstPartyNative}
+	if err := wrongProvider.Validate(); err == nil {
+		t.Fatal("arbitrary v1.2 provider unexpectedly validated")
+	}
+	crossCapabilityProvider := record
+	crossCapabilityProvider.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: FirstStageProviderID, Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true}}
+	if err := crossCapabilityProvider.Validate(); err == nil {
+		t.Fatal("cross-capability v1.2 provider evaluation unexpectedly validated")
+	}
+	unknownOrchestrationReason := record
+	unknownOrchestrationReason.OrchestrationReason = "UNTRUSTED_REASON"
+	unknownOrchestrationReason.Attempted = false
+	unknownOrchestrationReason.SelectedProvider = nil
+	unknownOrchestrationReason.Capability = nil
+	unknownOrchestrationReason.CandidateEvaluations = nil
+	unknownOrchestrationReason.Compatibility = execution.Unavailable
+	unknownOrchestrationReason.CompatibilityReason = nil
+	unknownOrchestrationReason.Execution = execution.Result{State: execution.Skipped, Reason: execution.ReasonNone, SideEffectSummary: "No provider was executed."}
+	unknownOrchestrationReason.ArtifactReference = nil
+	if err := unknownOrchestrationReason.Validate(); err == nil {
+		t.Fatal("unknown v1.2 orchestration reason unexpectedly validated")
+	}
+	metadata := FirstStagePackageMetadata{
+		SchemaVersion: FirstStageV12SchemaVersion, ManifestVersion: ManifestVersion, ProductVersion: ProductVersion, RuntimeArtifact: FirstStageV12RuntimeArtifact,
+		CollectionID: record.CollectionID, StartedAt: record.AcquisitionStartedAt, FinishedAt: record.AcquisitionFinishedAt, TargetFingerprint: record.TargetFingerprint, RunState: "COMPLETE",
+		ReceiptReferences:  []string{FirstStageReceiptPath(capability.ProcessIdentitySnapshotID), FirstStageReceiptPath(capability.WindowsEventLogSystemChannelID), FirstStageReceiptPath(capability.WindowsHostOSIdentitySnapshotID)},
+		ArtifactReferences: []ArtifactReference{*record.ArtifactReference}, DirectoryLayout: []string{"meta", "raw", "derived", "normalized", "receipts", "hashes", "handoff", "reports"},
+	}
+	if err := metadata.Validate(); err != nil {
+		t.Fatalf("v1.2 metadata rejected: %v", err)
+	}
+}
+
 func validFirstStagePackageMetadata(record FirstStageRecord) FirstStagePackageMetadata {
 	return FirstStagePackageMetadata{
 		SchemaVersion: SchemaVersion, ManifestVersion: ManifestVersion, ProductVersion: ProductVersion, RuntimeArtifact: FirstStageRuntimeArtifact,

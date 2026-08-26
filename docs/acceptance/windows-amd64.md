@@ -114,3 +114,44 @@ Windows amd64 RC-mode candidate on the exact environment in the second row.
 It does not establish support for Windows 10 or Windows 11 generally, all
 modern or legacy Windows versions, x86, arm64, non-elevated execution, an
 installer, RC publication, release readiness, or production readiness.
+
+## Host/OS identity post-promotion acceptance
+
+| Field | Value |
+| --- | --- |
+| Task | `TANNANG-R86-WINDOWS-HOST-OS-IDENTITY-POST-PROMOTION-HEADLESS-AND-GUI-ACCEPTANCE` |
+| Evidence reference | `R86-20260825T141249Z-65e0e35c` |
+| Source revision | `65e0e35c1c68c3fdb6a999c592a1198627539f0c` |
+| Source tree | `b5bddba77a071bb879f69b84ba2cb7c19c870f16` |
+| Paths exercised | `DEFAULT_HEADLESS`, `HOST_CONFIRMATION_HEADLESS`, `THIN_GUI` |
+| Host-reported product | `Microsoft Windows 10 Pro for Workstations` |
+| Display version | `25H2` |
+| Build | `26200.8894` |
+| OS / process architecture | `X64 / X64` |
+| Observed privilege | `ELEVATED=false` |
+| Protected baseline | `PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL; WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` |
+| Baseline order | `PROCESS; EVENTLOG; HOST` |
+| Package / manifest | `FirstStage 1.2 / 1.0` |
+| Runtime artifact | `tannang-first-stage-multi-v1.2` |
+| Receipts / artifacts | `3 / 3` |
+| Default headless | `COMPLETE / verify PASS` |
+| Host confirmation flag | `confirmation-only, idempotent / verify PASS` |
+| Thin GUI | `COMPLETE / package visible / verify PASS` |
+| Result | `TESTED_PASS` |
+
+The accepted Host/OS identity observation is limited to the fixed fields
+`computer_name`, `os_major`, `os_minor`, `os_build`, and
+`native_architecture`, written as one derived JSON artifact. Raw events, process
+contents, computer name, account names, collection identifiers, private paths,
+and secrets are intentionally not published here. `TESTED_PASS` applies only to
+the exact environment and source identity recorded above; it does not establish
+general Windows support, non-elevated support beyond the bounded observation,
+or production readiness.
+
+Portable artifact SHA-256 values for the accepted candidate binaries:
+
+| File | SHA-256 |
+| --- | --- |
+| CLI | `346e8fe3e762cdb727c079441a7478a6208f8f19ae897f7604d4446da92b6cb6` |
+| GUI | `05c8f71925aaa86da31115c4a15d1b13c4feddb5381ebff9f90e90c45a533226` |
+| GUI sibling CLI | `346e8fe3e762cdb727c079441a7478a6208f8f19ae897f7604d4446da92b6cb6` |

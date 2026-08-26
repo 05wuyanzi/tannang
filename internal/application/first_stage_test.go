@@ -135,30 +135,48 @@ func TestRunRequestAndCaseIDBoundaries(t *testing.T) {
 	}
 }
 
-func TestProtectedBaselineMergeIsDeterministic(t *testing.T) {
+func TestProtectedBaselineMergePreservesOriginalAuthority(t *testing.T) {
 	t.Parallel()
 	baseline := []capability.CapabilityRequest{
-		{ID: "SYNTHETIC_Z", Priority: capability.PriorityNormal, Protected: true},
-		{ID: "SYNTHETIC_B", Priority: capability.PriorityEarly, Protected: true},
+		{ID: capability.ProcessIdentitySnapshotID, Priority: capability.PriorityNormal, Protected: true},
+		{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityLate, Protected: true},
+		{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityLate, Protected: true},
 	}
 	supplemental := []capability.CapabilityRequest{
-		{ID: "SYNTHETIC_Z", Priority: capability.PriorityEarly},
-		{ID: "SYNTHETIC_A", Priority: capability.PriorityEarly},
-		{ID: "SYNTHETIC_M", Priority: capability.PriorityNormal},
-		{ID: "SYNTHETIC_M", Priority: capability.PriorityLate},
+		{ID: capability.WindowsHostOSIdentitySnapshotID, Priority: capability.PriorityEarly},
+		{ID: capability.WindowsEventLogSystemChannelID, Priority: capability.PriorityEarly},
+		{ID: capability.ProcessIdentitySnapshotID, Priority: capability.PriorityEarly},
 	}
 	got := mergeRequests(baseline, supplemental)
-	want := []string{"SYNTHETIC_B", "SYNTHETIC_Z", "SYNTHETIC_A", "SYNTHETIC_M"}
+	want := []struct {
+		id       string
+		priority capability.RequestPriority
+	}{
+		{capability.ProcessIdentitySnapshotID, capability.PriorityNormal},
+		{capability.WindowsEventLogSystemChannelID, capability.PriorityLate},
+		{capability.WindowsHostOSIdentitySnapshotID, capability.PriorityLate},
+	}
 	if len(got) != len(want) {
 		t.Fatalf("merged request count = %d, want %d", len(got), len(want))
 	}
-	for index, id := range want {
-		if got[index].ID != id {
-			t.Fatalf("merged order[%d] = %s, want %s", index, got[index].ID, id)
+	for index, expected := range want {
+		if got[index].ID != expected.id || got[index].Priority != expected.priority || !got[index].Protected {
+			t.Fatalf("merged request[%d] = %+v, want protected %s/%s", index, got[index], expected.id, expected.priority)
 		}
 	}
-	if !got[1].Protected || got[1].Priority != capability.PriorityEarly {
-		t.Fatalf("protected duplicate lost protection or earliest priority: %+v", got[1])
+	if got[2].ID != capability.WindowsHostOSIdentitySnapshotID || got[2].Priority != capability.PriorityLate || !got[2].Protected {
+		t.Fatalf("Host baseline authority changed: %+v", got[2])
+	}
+}
+
+func TestNonProtectedBaselineDuplicateRetainsExistingMergeBehavior(t *testing.T) {
+	t.Parallel()
+	got := mergeRequests(
+		[]capability.CapabilityRequest{{ID: "SYNTHETIC_BASELINE", Priority: capability.PriorityNormal}},
+		[]capability.CapabilityRequest{{ID: "SYNTHETIC_BASELINE", Priority: capability.PriorityEarly}},
+	)
+	if len(got) != 1 || got[0].ID != "SYNTHETIC_BASELINE" || got[0].Priority != capability.PriorityEarly || got[0].Protected {
+		t.Fatalf("non-protected duplicate merge changed: %+v", got)
 	}
 }
 
