@@ -172,7 +172,7 @@ func TestProductionBindingPromotesHostIdentityIntoProtectedBaseline(t *testing.T
 	}
 }
 
-func TestProductionBindingRegistersTransportAsSupplementalOnly(t *testing.T) {
+func TestProductionBindingPromotesTransportIntoProtectedBaseline(t *testing.T) {
 	transport := newFakeTransportStreamingRunner()
 	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
 		StreamingRunner: newFakeStreamingRunner(), HostIdentityRunner: newFakeHostStreamingRunner(), TransportRunner: transport, EventLogRunner: fakeEventLogFileRunner{},
@@ -184,16 +184,60 @@ func TestProductionBindingRegistersTransportAsSupplementalOnly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(stage.catalog) != 4 || len(stage.baseline) != 3 || len(stage.streamingRunners) != 3 || len(stage.availabilityProbers) != 2 {
+	if len(stage.catalog) != 4 || len(stage.baseline) != 4 || len(stage.streamingRunners) != 3 || len(stage.availabilityProbers) != 2 {
 		t.Fatalf("catalog=%d baseline=%d streaming=%d probes=%d", len(stage.catalog), len(stage.baseline), len(stage.streamingRunners), len(stage.availabilityProbers))
 	}
 	if _, ok := stage.availabilityProbers[capability.WindowsTransportEndpointSnapshotID]; !ok {
 		t.Fatal("transport availability prober was not registered")
 	}
-	for _, request := range stage.baseline {
-		if request.ID == capability.WindowsTransportEndpointSnapshotID || !request.Protected {
-			t.Fatalf("transport altered protected baseline: %+v", stage.baseline)
+	want := []struct {
+		id       string
+		priority capability.RequestPriority
+	}{
+		{capability.ProcessIdentitySnapshotID, capability.PriorityNormal},
+		{capability.WindowsEventLogSystemChannelID, capability.PriorityLate},
+		{capability.WindowsHostOSIdentitySnapshotID, capability.PriorityLate},
+		{capability.WindowsTransportEndpointSnapshotID, capability.PriorityLate},
+	}
+	for index, expected := range want {
+		request := stage.baseline[index]
+		if request.ID != expected.id || request.Priority != expected.priority || !request.Protected {
+			t.Fatalf("baseline[%d]=%+v, want protected %s/%s", index, request, expected.id, expected.priority)
 		}
+	}
+	output := filepath.Join(t.TempDir(), "package")
+	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.State != RunComplete || len(result.Records) != 4 {
+		t.Fatalf("default run=%+v", result)
+	}
+	for index, expected := range want {
+		if result.Records[index].Request.ID != expected.id || !result.Records[index].Request.Protected {
+			t.Fatalf("record[%d]=%+v", index, result.Records[index].Request)
+		}
+	}
+}
+
+func TestPromotedTransportBaselineCannotBeRemovedOrDemoted(t *testing.T) {
+	stage, err := newProcessIdentitySnapshotFirstStageWithDeps(time.Second, processIdentitySnapshotFirstStageDeps{
+		StreamingRunner: newFakeStreamingRunner(), HostIdentityRunner: newFakeHostStreamingRunner(), TransportRunner: newFakeTransportStreamingRunner(), EventLogRunner: fakeEventLogFileRunner{},
+		FingerprintProbe: func(context.Context, string) (fingerprint.TargetFingerprint, error) {
+			return fingerprint.TargetFingerprint{Platform: "windows", OSFamily: "WindowsNT", Version: "test", Build: "1", Architecture: "amd64", Privilege: "standard-user", RuntimeLane: "MODERN"}, nil
+		},
+		PackageFactory: defaultFirstStagePackageFactory, Clock: time.Now, CollectionID: NewCollectionID,
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	output := filepath.Join(t.TempDir(), "package")
+	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output, Supplemental: []capability.CapabilityRequest{{ID: capability.WindowsTransportEndpointSnapshotID, Priority: capability.PriorityEarly}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(result.Records) != 4 || result.Records[3].Request.ID != capability.WindowsTransportEndpointSnapshotID || result.Records[3].Request.Priority != capability.PriorityLate || !result.Records[3].Request.Protected {
+		t.Fatalf("transport baseline authority changed: %+v", result.Records)
 	}
 }
 

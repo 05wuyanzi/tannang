@@ -398,7 +398,7 @@ func TestRealFirstStageNetworkSupplementalUsesV13AndRetainsOneArtifact(t *testin
 	}
 	for _, record := range result.Records {
 		if record.Request.ID == capability.WindowsTransportEndpointSnapshotID {
-			if record.Request.Protected || record.ArtifactReference != receipt.WindowsTransportEndpointArtifactPath || record.Execution.State != execution.Collected {
+			if !record.Request.Protected || record.ArtifactReference != receipt.WindowsTransportEndpointArtifactPath || record.Execution.State != execution.Collected {
 				t.Fatalf("network record=%+v", record)
 			}
 		}
@@ -460,22 +460,22 @@ func TestRealFirstStageNetworkUnavailableStillFinalizesV13(t *testing.T) {
 	}
 }
 
-func TestRealFirstStageDefaultWithTransportBindingRemainsV12(t *testing.T) {
+func TestRealFirstStageDefaultWithTransportBindingUsesV13(t *testing.T) {
 	session := &fakeMultiArtifactSession{stagingPath: filepath.Join(t.TempDir(), "system.evtx"), allowEventRetain: true}
 	stage := newRealTransportTestStage(t, newFakeStreamingRunner(), newFakeHostStreamingRunner(), newFakeTransportStreamingRunner(), &acceptedFileArtifactRunner{}, (&fakeMultiArtifactFactory{session: session}).begin)
 	result, err := stage.Run(context.Background(), realRunRequest(t))
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.State != RunComplete || len(result.Records) != 3 {
+	if result.State != RunComplete || len(result.Records) != 4 {
 		t.Fatalf("result=%+v", result)
 	}
-	if session.metadata.SchemaVersion != receipt.FirstStageV12SchemaVersion || session.metadata.RuntimeArtifact != receipt.FirstStageV12RuntimeArtifact || len(session.metadata.ReceiptReferences) != 3 {
+	if session.metadata.SchemaVersion != receipt.FirstStageV13SchemaVersion || session.metadata.RuntimeArtifact != receipt.FirstStageV13RuntimeArtifact || len(session.metadata.ReceiptReferences) != 4 {
 		t.Fatalf("metadata=%+v", session.metadata)
 	}
 	session.metadata.DirectoryLayout = []string{"meta", "raw", "derived", "normalized", "receipts", "hashes", "handoff", "reports"}
 	if err := session.metadata.Validate(); err != nil {
-		t.Fatalf("v1.2 metadata with network descriptor rejected: %v", err)
+		t.Fatalf("v1.3 metadata with promoted network descriptor rejected: %v", err)
 	}
 }
 
@@ -528,14 +528,14 @@ func TestRealFirstStageNetworkFailureRetainsProtectedSurvivorsAndV13Accounting(t
 	}
 }
 
-func TestRealFirstStageDefaultPackageWithNetworkBindingStaysV12(t *testing.T) {
+func TestRealFirstStageDefaultPackageWithNetworkBindingUsesV13(t *testing.T) {
 	stage := newRealTransportTestStage(t, newFakeStreamingRunner(), newFakeHostStreamingRunner(), newFakeTransportStreamingRunner(), &acceptedFileArtifactRunner{}, defaultFirstStagePackageFactory)
 	output := filepath.Join(t.TempDir(), "package")
 	result, err := stage.Run(context.Background(), RunRequest{OutputDestination: output})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.State != RunComplete || len(result.Records) != 3 || !result.FinalizationVerified {
+	if result.State != RunComplete || len(result.Records) != 4 || !result.FinalizationVerified {
 		t.Fatalf("result=%+v", result)
 	}
 	if err := integrity.Verify(output); err != nil {
@@ -545,7 +545,7 @@ func TestRealFirstStageDefaultPackageWithNetworkBindingStaysV12(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !bytes.Contains(metadataBytes, []byte(`"schema_version": "1.2"`)) || bytes.Contains(metadataBytes, []byte(`windows-transport-endpoints`)) {
+	if !bytes.Contains(metadataBytes, []byte(`"schema_version": "1.3"`)) || !bytes.Contains(metadataBytes, []byte(`windows-transport-endpoints`)) {
 		t.Fatalf("metadata=%s", metadataBytes)
 	}
 }

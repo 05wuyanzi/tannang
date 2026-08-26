@@ -275,8 +275,7 @@ func (r FirstStageRecord) validateV13() error {
 	if !validV13Capability(r.RequestedCapability.ID) {
 		return errors.New("v1.3 receipt contains an unknown capability")
 	}
-	expectedProtected := r.RequestedCapability.ID != capability.WindowsTransportEndpointSnapshotID
-	if r.RequestedCapability.Protected != expectedProtected {
+	if r.RequestedCapability.ID != capability.WindowsTransportEndpointSnapshotID && !r.RequestedCapability.Protected {
 		return errors.New("v1.3 request protection does not match the fixed activation contract")
 	}
 	if r.Capability == nil || r.Capability.ID != r.RequestedCapability.ID {

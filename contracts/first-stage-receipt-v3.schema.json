@@ -23,7 +23,7 @@
     },
     {
       "if": {"properties": {"requested_capability": {"properties": {"id": {"const": "WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT"}}, "required": ["id"]}}, "required": ["requested_capability"]},
-      "then": {"properties": {"requested_capability": {"properties": {"protected": {"const": false}}}, "capability": {"properties": {"id": {"const": "WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT"}, "description": {"const": "Capture a bounded snapshot of local Windows TCP and UDP transport endpoints with owning process IDs."}, "acquisition_semantics": {"const": "STATE_SNAPSHOT"}, "sensitivity": {"const": "medium"}}}, "selected_provider": {"properties": {"id": {"const": "windows-iphlpapi-transport-endpoints"}}}, "candidate_evaluations": {"items": {"properties": {"provider_id": {"const": "windows-iphlpapi-transport-endpoints"}}}}}}
+      "then": {"properties": {"requested_capability": {"properties": {"protected": {"enum": [false, true]}}}, "capability": {"properties": {"id": {"const": "WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT"}, "description": {"const": "Capture a bounded snapshot of local Windows TCP and UDP transport endpoints with owning process IDs."}, "acquisition_semantics": {"const": "STATE_SNAPSHOT"}, "sensitivity": {"const": "medium"}}}, "selected_provider": {"properties": {"id": {"const": "windows-iphlpapi-transport-endpoints"}}}, "candidate_evaluations": {"items": {"properties": {"provider_id": {"const": "windows-iphlpapi-transport-endpoints"}}}}}}
     }
   ],
   "$defs": {

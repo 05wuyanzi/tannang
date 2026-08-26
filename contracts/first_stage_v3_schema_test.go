@@ -59,6 +59,20 @@ func TestFirstStageV3SchemasParseAndPinNetworkIdentity(t *testing.T) {
 		}
 		then := branch["then"].(map[string]any)
 		thenProperties := then["properties"].(map[string]any)
+		requestedCapability := thenProperties["requested_capability"].(map[string]any)
+		requestedProperties := requestedCapability["properties"].(map[string]any)
+		protection, ok := requestedProperties["protected"].(map[string]any)
+		if !ok {
+			t.Fatalf("v1.3 %s protection constraint is missing", id)
+		}
+		if id == "WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT" {
+			values, ok := protection["enum"].([]any)
+			if !ok || len(values) != 2 || values[0] != false || values[1] != true {
+				t.Fatalf("v1.3 network protection constraint=%v, want enum [false,true]", protection)
+			}
+		} else if protection["const"] != true {
+			t.Fatalf("v1.3 %s protection constraint=%v, want const true", id, protection)
+		}
 		evaluations := thenProperties["candidate_evaluations"].(map[string]any)
 		items := evaluations["items"].(map[string]any)
 		itemProperties := items["properties"].(map[string]any)

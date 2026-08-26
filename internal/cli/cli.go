@@ -96,7 +96,7 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 	realSnapshot := flags.Bool("process-identity-snapshot", false, "collect the fixed Windows process identity snapshot")
 	eventLogSystem := flags.Bool("windows-event-log-system", false, "collect the fixed local Windows System Event Log channel")
 	hostIdentity := flags.Bool("windows-host-os-identity", false, "collect the fixed local Windows host/OS identity snapshot")
-	transportEndpoints := flags.Bool("windows-transport-endpoints", false, "collect the supplemental local Windows transport endpoint snapshot")
+	transportEndpoints := flags.Bool("windows-transport-endpoints", false, "confirm the protected local Windows transport endpoint snapshot")
 	output := flags.String("output", "", "new absolute local evidence package directory")
 	caseID := flags.String("case-id", "", "optional case identifier for real collection")
 	runtimeStatus := flags.Bool("runtime-status-stderr", false, "emit bounded runtime status records to stderr")
@@ -162,14 +162,9 @@ func runCollect(ctx context.Context, args []string, stdout, stderr io.Writer) in
 			return ExitProviderError
 		}
 	}
-	// The three baseline flags are confirmation-only. The transport flag is the
-	// sole explicit supplemental request; protected membership remains owned by
-	// the fixed production baseline.
-	var supplemental []capability.CapabilityRequest
-	if transportEndpointsSelected {
-		supplemental = []capability.CapabilityRequest{{ID: capability.WindowsTransportEndpointSnapshotID, Priority: capability.PriorityLate, Protected: false}}
-	}
-	return runRealCollect(ctx, *output, *caseID, supplemental, stdout, stderr, *runtimeStatus)
+	// All four real capability flags are confirmation-only. Protected membership
+	// remains owned by the fixed production baseline.
+	return runRealCollect(ctx, *output, *caseID, nil, stdout, stderr, *runtimeStatus)
 }
 
 type realCollectCapabilitySummary struct {

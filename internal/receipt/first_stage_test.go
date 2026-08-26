@@ -314,10 +314,19 @@ func TestFirstStageV13TransportReceiptStrictIdentity(t *testing.T) {
 	if err := record.Validate(); err != nil {
 		t.Fatalf("valid v1.3 transport receipt rejected: %v", err)
 	}
-	wrongProtection := record
-	wrongProtection.RequestedCapability.Protected = true
-	if err := wrongProtection.Validate(); err == nil {
-		t.Fatal("protected network receipt unexpectedly validated")
+	protectedNetwork := record
+	protectedNetwork.RequestedCapability.Protected = true
+	if err := protectedNetwork.Validate(); err != nil {
+		t.Fatalf("new production protected network receipt rejected: %v", err)
+	}
+	nonProtectedProcess := record
+	nonProtectedProcess.RequestedCapability = capability.CapabilityRequest{ID: capability.ProcessIdentitySnapshotID, Priority: capability.PriorityNormal, Protected: false}
+	processDefinition := capability.ProcessIdentitySnapshot()
+	nonProtectedProcess.Capability = &processDefinition
+	nonProtectedProcess.SelectedProvider = &ProviderIdentity{ID: FirstStageProviderID, Class: provider.FirstPartyNative}
+	nonProtectedProcess.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: FirstStageProviderID, Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true}}
+	if err := nonProtectedProcess.Validate(); err == nil {
+		t.Fatal("non-protected process receipt unexpectedly validated")
 	}
 	wrongProvider := record
 	wrongProvider.SelectedProvider = &ProviderIdentity{ID: FirstStageProviderID, Class: provider.FirstPartyNative}

@@ -219,6 +219,11 @@ func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Durat
 			return nil, errors.New("real transport endpoint Provider must implement AvailabilityProber")
 		}
 		stage.availabilityProbers[definition.ID] = probe
+		transportRequest := capability.CapabilityRequest{ID: definition.ID, Priority: capability.PriorityLate, Protected: true}
+		if err := transportRequest.Validate(); err != nil {
+			return nil, fmt.Errorf("validate protected transport endpoint baseline request: %w", err)
+		}
+		stage.baseline = append(stage.baseline, transportRequest)
 	}
 	return stage, nil
 }
