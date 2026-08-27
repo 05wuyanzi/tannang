@@ -4,15 +4,21 @@
   "title": "Tannang Target Fingerprint v0",
   "type": "object",
   "additionalProperties": false,
-  "required": [
-    "platform",
-    "os_family",
-    "version",
-    "build",
-    "architecture",
-    "privilege",
-    "elevated",
-    "runtime_lane"
+  "required": ["platform"],
+  "anyOf": [
+    {
+      "required": [
+        "os_family",
+        "version",
+        "build",
+        "architecture",
+        "privilege",
+        "elevated",
+        "runtime_lane"
+      ],
+      "not": { "required": ["probe"] }
+    },
+    { "required": ["probe"] }
   ],
   "properties": {
     "platform": { "type": "string", "minLength": 1 },
@@ -22,6 +28,229 @@
     "architecture": { "type": "string", "minLength": 1 },
     "privilege": { "type": "string", "minLength": 1 },
     "elevated": { "type": "boolean" },
-    "runtime_lane": { "type": "string", "minLength": 1 }
+    "runtime_lane": { "type": "string", "minLength": 1 },
+    "probe": { "$ref": "#/$defs/probe_fields" }
+  },
+  "$defs": {
+    "field_state": {
+      "enum": ["KNOWN", "UNAVAILABLE", "FAILED", "UNSUPPORTED"]
+    },
+    "string_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "source", "captured_at"],
+      "properties": {
+        "state": { "$ref": "#/$defs/field_state" },
+        "value": { "type": "string", "minLength": 1, "pattern": "\\S" },
+        "source": { "type": "string", "minLength": 1 },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "error_reason": { "type": "string", "minLength": 1 },
+        "error_code": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "state": { "const": "KNOWN" } },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["value"],
+            "not": {
+              "anyOf": [
+                { "required": ["error_reason"] },
+                { "required": ["error_code"] }
+              ]
+            }
+          },
+          "else": {
+            "required": ["error_reason"],
+            "not": { "required": ["value"] }
+          }
+        }
+      ]
+    },
+    "bool_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "source", "captured_at"],
+      "properties": {
+        "state": { "$ref": "#/$defs/field_state" },
+        "value": { "type": "boolean" },
+        "source": { "type": "string", "minLength": 1 },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "error_reason": { "type": "string", "minLength": 1 },
+        "error_code": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "state": { "const": "KNOWN" } },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["value"],
+            "not": {
+              "anyOf": [
+                { "required": ["error_reason"] },
+                { "required": ["error_code"] }
+              ]
+            }
+          },
+          "else": {
+            "required": ["error_reason"],
+            "not": { "required": ["value"] }
+          }
+        }
+      ]
+    },
+    "uint32_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "source", "captured_at"],
+      "properties": {
+        "state": { "$ref": "#/$defs/field_state" },
+        "value": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "source": { "type": "string", "minLength": 1 },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "error_reason": { "type": "string", "minLength": 1 },
+        "error_code": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "state": { "const": "KNOWN" } },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["value"],
+            "not": {
+              "anyOf": [
+                { "required": ["error_reason"] },
+                { "required": ["error_code"] }
+              ]
+            }
+          },
+          "else": {
+            "required": ["error_reason"],
+            "not": { "required": ["value"] }
+          }
+        }
+      ]
+    },
+    "uint64_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "source", "captured_at"],
+      "properties": {
+        "state": { "$ref": "#/$defs/field_state" },
+        "value": { "type": "integer", "minimum": 0 },
+        "source": { "type": "string", "minLength": 1 },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "error_reason": { "type": "string", "minLength": 1 },
+        "error_code": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "state": { "const": "KNOWN" } },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["value"],
+            "not": {
+              "anyOf": [
+                { "required": ["error_reason"] },
+                { "required": ["error_code"] }
+              ]
+            }
+          },
+          "else": {
+            "required": ["error_reason"],
+            "not": { "required": ["value"] }
+          }
+        }
+      ]
+    },
+    "basis_points_field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "source", "captured_at"],
+      "properties": {
+        "state": { "$ref": "#/$defs/field_state" },
+        "value": { "type": "integer", "minimum": 0, "maximum": 10000 },
+        "source": { "type": "string", "minLength": 1 },
+        "captured_at": { "type": "string", "format": "date-time" },
+        "error_reason": { "type": "string", "minLength": 1 },
+        "error_code": { "type": "integer", "minimum": 1, "maximum": 4294967295 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "state": { "const": "KNOWN" } },
+            "required": ["state"]
+          },
+          "then": {
+            "required": ["value"],
+            "not": {
+              "anyOf": [
+                { "required": ["error_reason"] },
+                { "required": ["error_code"] }
+              ]
+            }
+          },
+          "else": {
+            "required": ["error_reason"],
+            "not": { "required": ["value"] }
+          }
+        }
+      ]
+    },
+    "output_volume": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "validated_output_path",
+        "volume_root",
+        "drive_type",
+        "filesystem",
+        "available_bytes_to_caller"
+      ],
+      "properties": {
+        "validated_output_path": { "$ref": "#/$defs/string_field" },
+        "volume_root": { "$ref": "#/$defs/string_field" },
+        "drive_type": { "$ref": "#/$defs/string_field" },
+        "filesystem": { "$ref": "#/$defs/string_field" },
+        "available_bytes_to_caller": { "$ref": "#/$defs/uint64_field" }
+      }
+    },
+    "probe_fields": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "os_version",
+        "os_build",
+        "native_architecture",
+        "process_architecture",
+        "logical_processor_count",
+        "total_physical_memory_bytes",
+        "available_physical_memory_bytes",
+        "elevated",
+        "token_elevation_type",
+        "output_volume"
+      ],
+      "properties": {
+        "os_version": { "$ref": "#/$defs/string_field" },
+        "os_build": { "$ref": "#/$defs/string_field" },
+        "native_architecture": { "$ref": "#/$defs/string_field" },
+        "process_architecture": { "$ref": "#/$defs/string_field" },
+        "logical_processor_count": { "$ref": "#/$defs/uint32_field" },
+        "total_physical_memory_bytes": { "$ref": "#/$defs/uint64_field" },
+        "available_physical_memory_bytes": { "$ref": "#/$defs/uint64_field" },
+        "elevated": { "$ref": "#/$defs/bool_field" },
+        "token_elevation_type": { "$ref": "#/$defs/string_field" },
+        "output_volume": { "$ref": "#/$defs/output_volume" },
+        "cpu_busy_basis_points": { "$ref": "#/$defs/basis_points_field" }
+      }
+    }
   }
 }

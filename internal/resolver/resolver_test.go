@@ -42,6 +42,47 @@ func TestProviderClassHasNoPermanentPriority(t *testing.T) {
 	}
 }
 
+func TestProcessIdentitySnapshotArchitecturesAreResolverEligible(t *testing.T) {
+	t.Parallel()
+	for _, architecture := range []string{"amd64", "x86"} {
+		architecture := architecture
+		t.Run(architecture, func(t *testing.T) {
+			t.Parallel()
+			target := testTarget()
+			target.Architecture = architecture
+			decision, err := resolver.Resolve(
+				capability.ProcessIdentitySnapshot(),
+				target,
+				[]provider.Descriptor{processIdentitySnapshotDescriptor()},
+				resolver.Policy{},
+			)
+			if err != nil {
+				t.Fatalf("Resolve() error: %v", err)
+			}
+			if decision.Selected == nil || decision.Selected.ID != "windows-toolhelp-process-snapshot" ||
+				decision.Compatibility != execution.Available || decision.Reason != execution.ReasonNone {
+				t.Fatalf("%s decision = %+v, want AVAILABLE selected process snapshot Provider", architecture, decision)
+			}
+		})
+	}
+}
+
+func TestProcessIdentitySnapshotDescriptorDoesNotServeForeignCapability(t *testing.T) {
+	t.Parallel()
+	decision, err := resolver.Resolve(
+		testCapability(),
+		testTarget(),
+		[]provider.Descriptor{processIdentitySnapshotDescriptor()},
+		resolver.Policy{},
+	)
+	if err != nil {
+		t.Fatalf("Resolve() error: %v", err)
+	}
+	if decision.Selected != nil || decision.Compatibility != execution.Unavailable {
+		t.Fatalf("foreign Capability selected process snapshot Provider: %+v", decision)
+	}
+}
+
 func testCapability() capability.Capability {
 	return capability.Capability{
 		ID:                   "SYNTHETIC_TEST",
@@ -80,6 +121,32 @@ func testDescriptor(id string, class provider.Class, quality int) provider.Descr
 			Completeness:    quality,
 			OutputStability: quality,
 			EvidenceValue:   quality,
+		},
+	}
+}
+
+func processIdentitySnapshotDescriptor() provider.Descriptor {
+	return provider.Descriptor{
+		ID:           "windows-toolhelp-process-snapshot",
+		Class:        provider.FirstPartyNative,
+		Capabilities: []string{capability.ProcessIdentitySnapshotID},
+		Requirements: provider.Requirements{
+			Platforms:          []string{"windows"},
+			OSFamilies:         []string{"WindowsNT"},
+			Architectures:      []string{"amd64", "x86"},
+			RequiresElevation:  false,
+			Available:          true,
+			AvailabilityReason: execution.ReasonNone,
+		},
+		SideEffects: []string{"read-only Tool Help process snapshot"},
+		Quality: provider.Quality{
+			Compatibility:   execution.Available,
+			Reason:          execution.ReasonNone,
+			Fidelity:        3,
+			Disturbance:     1,
+			Completeness:    2,
+			OutputStability: 4,
+			EvidenceValue:   3,
 		},
 	}
 }

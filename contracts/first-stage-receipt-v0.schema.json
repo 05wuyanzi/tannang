@@ -1,0 +1,297 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/first-stage-receipt-v0.schema.json",
+  "title": "Tannang FirstStage Receipt v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_version",
+    "product_version",
+    "runtime_artifact",
+    "collection_id",
+    "target_fingerprint",
+    "requested_capability",
+    "compatibility",
+    "attempted",
+    "execution",
+    "acquisition_started_at",
+    "acquisition_finished_at"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "manifest_version": { "const": "1.0" },
+    "product_version": { "type": "string", "minLength": 1 },
+    "runtime_artifact": { "const": "tannang-first-stage" },
+    "collection_id": { "type": "string", "pattern": "^COL-[0-9a-f-]{36}$" },
+    "case_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "target_fingerprint": { "$ref": "target-fingerprint-v0.schema.json" },
+    "requested_capability": { "$ref": "#/$defs/request" },
+    "capability": {
+      "allOf": [
+        { "$ref": "capability-v0.schema.json" },
+        {
+          "properties": {
+            "id": { "const": "PROCESS_IDENTITY_SNAPSHOT" },
+            "description": { "const": "Capture a minimal snapshot of visible Windows process identities: process ID, parent process ID, and executable name." },
+            "acquisition_semantics": { "const": "STATE_SNAPSHOT" },
+            "sensitivity": { "const": "medium" }
+          }
+        }
+      ]
+    },
+    "selected_provider": { "$ref": "#/$defs/provider_identity" },
+    "compatibility": { "enum": ["AVAILABLE", "DEGRADED", "UNAVAILABLE"] },
+    "compatibility_reason": { "$ref": "#/$defs/reason" },
+    "candidate_evaluations": {
+      "type": "array",
+      "maxItems": 1,
+      "items": { "$ref": "#/$defs/candidate_evaluation" }
+    },
+    "attempted": { "type": "boolean" },
+    "execution": { "$ref": "#/$defs/execution" },
+    "orchestration_reason": {
+      "enum": ["UNKNOWN_CAPABILITY", "RESOLUTION_FAILED", "CANCELLED", "PACKAGE_FINALIZATION_FAILED"]
+    },
+    "missing_evidence": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "artifact_reference": { "$ref": "#/$defs/artifact_reference" },
+    "acquisition_started_at": { "type": "string", "format": "date-time" },
+    "acquisition_finished_at": { "type": "string", "format": "date-time" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "attempted": { "const": false } },
+        "required": ["attempted"]
+      },
+      "then": {
+        "properties": {
+          "execution": {
+            "properties": { "state": { "const": "SKIPPED" } },
+            "required": ["state"]
+          }
+        },
+        "not": { "required": ["artifact_reference"] }
+      }
+    },
+    {
+      "if": { "required": ["orchestration_reason"] },
+      "then": {
+        "properties": {
+          "execution": {
+            "properties": { "reason": { "const": "NONE" } },
+            "required": ["reason"]
+          }
+        }
+      }
+    },
+    {
+      "if": { "required": ["selected_provider"] },
+      "then": {
+        "required": ["capability", "compatibility_reason", "candidate_evaluations"],
+        "oneOf": [
+          {
+            "properties": {
+              "compatibility": { "const": "AVAILABLE" },
+              "compatibility_reason": { "const": "NONE" },
+              "candidate_evaluations": {
+                "minItems": 1,
+                "prefixItems": [
+                  {
+                    "allOf": [
+                      { "$ref": "#/$defs/candidate_evaluation" },
+                      {
+                        "properties": {
+                          "compatibility": { "const": "AVAILABLE" },
+                          "reason": { "const": "NONE" },
+                          "eligible": { "const": true }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          },
+          {
+            "properties": {
+              "compatibility": { "const": "DEGRADED" },
+              "compatibility_reason": { "const": "PRIVILEGE_REQUIRED" },
+              "candidate_evaluations": {
+                "minItems": 1,
+                "prefixItems": [
+                  {
+                    "allOf": [
+                      { "$ref": "#/$defs/candidate_evaluation" },
+                      {
+                        "properties": {
+                          "compatibility": { "const": "DEGRADED" },
+                          "reason": { "const": "PRIVILEGE_REQUIRED" },
+                          "eligible": { "const": true }
+                        }
+                      }
+                    ]
+                  }
+                ]
+              }
+            }
+          }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "attempted": { "const": true } },
+        "required": ["attempted"]
+      },
+      "then": {
+        "required": ["capability", "selected_provider", "compatibility_reason", "candidate_evaluations"],
+        "properties": {
+          "requested_capability": {
+            "allOf": [
+              { "$ref": "#/$defs/request" },
+              { "properties": { "id": { "const": "PROCESS_IDENTITY_SNAPSHOT" } } }
+            ]
+          },
+          "compatibility": { "enum": ["AVAILABLE", "DEGRADED"] },
+          "candidate_evaluations": {
+            "minItems": 1,
+            "items": {
+              "allOf": [
+                { "$ref": "#/$defs/candidate_evaluation" },
+                { "properties": { "eligible": { "const": true } } }
+              ]
+            }
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "orchestration_reason": { "const": "PACKAGE_FINALIZATION_FAILED" } },
+        "required": ["orchestration_reason"]
+      },
+      "then": {
+        "required": ["capability", "selected_provider", "compatibility_reason", "candidate_evaluations", "missing_evidence"],
+        "properties": {
+          "attempted": { "const": false },
+          "requested_capability": {
+            "allOf": [
+              { "$ref": "#/$defs/request" },
+              { "properties": { "id": { "const": "PROCESS_IDENTITY_SNAPSHOT" } } }
+            ]
+          },
+          "compatibility": { "enum": ["AVAILABLE", "DEGRADED"] },
+          "candidate_evaluations": {
+            "minItems": 1,
+            "items": {
+              "allOf": [
+                { "$ref": "#/$defs/candidate_evaluation" },
+                { "properties": { "eligible": { "const": true } } }
+              ]
+            }
+          },
+          "missing_evidence": {
+            "minItems": 1,
+            "maxItems": 1,
+            "prefixItems": [{ "const": "The requested evidence is absent because package staging preparation failed before Provider execution." }]
+          },
+          "execution": {
+            "properties": { "state": { "const": "SKIPPED" }, "reason": { "const": "NONE" } },
+            "required": ["state", "reason"]
+          }
+        },
+        "not": { "required": ["artifact_reference"] }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "execution": {
+            "properties": { "state": { "enum": ["COLLECTED", "PARTIAL"] } },
+            "required": ["state"]
+          }
+        }
+      },
+      "then": { "required": ["artifact_reference"] },
+      "else": { "not": { "required": ["artifact_reference"] } }
+    }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "priority", "protected"],
+      "properties": {
+        "id": { "type": "string", "pattern": "^[A-Z0-9_]+$" },
+        "priority": { "enum": ["EARLY", "NORMAL", "LATE"] },
+        "protected": { "type": "boolean" }
+      }
+    },
+    "provider_identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "class"],
+      "properties": {
+        "id": { "const": "windows-toolhelp-process-snapshot" },
+        "class": { "const": "FIRST_PARTY_NATIVE" }
+      }
+    },
+    "reason": {
+      "enum": [
+        "NONE",
+        "PRIVILEGE_REQUIRED",
+        "API_UNAVAILABLE",
+        "DEPENDENCY_MISSING",
+        "TARGET_STATE_RESTRICTED",
+        "TIMEOUT",
+        "CANCELLED",
+        "PROVIDER_ERROR",
+        "POLICY_DISABLED",
+        "UNSUPPORTED_OS",
+        "UNSUPPORTED_ARCH"
+      ]
+    },
+    "execution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["state", "reason", "side_effect_summary"],
+      "properties": {
+        "state": { "enum": ["COLLECTED", "PARTIAL", "SKIPPED", "FAILED", "BLOCKED"] },
+        "reason": { "$ref": "#/$defs/reason" },
+        "detail": { "type": "string" },
+        "side_effect_summary": { "type": "string", "minLength": 1 }
+      }
+    },
+    "candidate_evaluation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["provider_id", "compatibility", "reason", "eligible", "score"],
+      "properties": {
+        "provider_id": { "const": "windows-toolhelp-process-snapshot" },
+        "compatibility": { "enum": ["AVAILABLE", "DEGRADED", "UNAVAILABLE"] },
+        "reason": { "$ref": "#/$defs/reason" },
+        "eligible": { "type": "boolean" },
+        "score": { "type": "integer" }
+      }
+    },
+    "artifact_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["path", "media_type", "content_schema_id", "raw_or_derived", "size", "sha256"],
+      "properties": {
+        "path": { "const": "derived/process-identity-snapshot.ndjson" },
+        "media_type": { "const": "application/x-ndjson" },
+        "content_schema_id": {
+          "const": "https://github.com/05wuyanzi/tannang/contracts/process-identity-snapshot-record-v0.schema.json"
+        },
+        "raw_or_derived": { "const": "DERIVED" },
+        "size": { "type": "integer", "minimum": 0 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+      }
+    }
+  }
+}

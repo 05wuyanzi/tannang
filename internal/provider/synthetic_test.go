@@ -62,4 +62,28 @@ func TestSyntheticRunnerBlocksActiveTrace(t *testing.T) {
 	if result.State != execution.Blocked || result.Reason != execution.ReasonPolicyDisabled {
 		t.Fatalf("Active Trace result = %+v, want BLOCKED/POLICY_DISABLED", result)
 	}
+	if err := result.Validate(); err != nil {
+		t.Fatalf("Active Trace result is invalid: %v", err)
+	}
+}
+
+func TestSyntheticRunnerResultsCarryTruthfulSideEffectSummary(t *testing.T) {
+	t.Parallel()
+	for _, name := range []string{"available-collected", "degraded-partial", "privilege-blocked", "provider-failure"} {
+		fixture, err := provider.LoadFixture(name)
+		if err != nil {
+			t.Fatal(err)
+		}
+		runner, err := provider.NewSyntheticRunner(fixture, fixture.Providers[0])
+		if err != nil {
+			t.Fatal(err)
+		}
+		result := runner.Execute(context.Background(), fixture.Capability, fixture.Target)
+		if err := result.Validate(); err != nil {
+			t.Fatalf("fixture %s returned invalid result: %v", name, err)
+		}
+		if result.SideEffectSummary == "" {
+			t.Fatalf("fixture %s returned no side-effect summary", name)
+		}
+	}
 }

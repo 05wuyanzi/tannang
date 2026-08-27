@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:tannang:artifact:windows-host-os-identity-json-v0",
+  "title": "Tannang Windows Host OS Identity Snapshot v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["computer_name", "os_major", "os_minor", "os_build", "native_architecture"],
+  "properties": {
+    "computer_name": {"type": "string", "minLength": 1, "maxLength": 256},
+    "os_major": {"type": "integer", "minimum": 0},
+    "os_minor": {"type": "integer", "minimum": 0},
+    "os_build": {"type": "integer", "minimum": 0},
+    "native_architecture": {"enum": ["x86", "amd64"]}
+  }
+}

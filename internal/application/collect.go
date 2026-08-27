@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/05wuyanzi/tannang/internal/buildinfo"
 	"github.com/05wuyanzi/tannang/internal/evidence"
 	"github.com/05wuyanzi/tannang/internal/execution"
 	"github.com/05wuyanzi/tannang/internal/provider"
@@ -46,9 +47,10 @@ func Collect(ctx context.Context, fixtureName, output string) (Outcome, error) {
 	}
 
 	result := execution.Result{
-		State:  execution.Skipped,
-		Reason: decision.Reason,
-		Detail: "No compatible synthetic provider was selected.",
+		State:             execution.Skipped,
+		Reason:            decision.Reason,
+		Detail:            "No compatible synthetic provider was selected.",
+		SideEffectSummary: "No provider was executed.",
 	}
 	var selected *receipt.ProviderIdentity
 	var providerClass provider.Class
@@ -63,6 +65,9 @@ func Collect(ctx context.Context, fixtureName, output string) (Outcome, error) {
 		selected = &receipt.ProviderIdentity{ID: decision.Selected.ID, Class: decision.Selected.Class}
 		providerClass = decision.Selected.Class
 	}
+	if err := result.Validate(); err != nil {
+		return Outcome{}, fmt.Errorf("validate synthetic execution result: %w", err)
+	}
 	finished := time.Now().UTC()
 	artifactPath := ""
 	if len(payload) > 0 && (result.State == execution.Collected || result.State == execution.Partial) {
@@ -75,7 +80,7 @@ func Collect(ctx context.Context, fixtureName, output string) (Outcome, error) {
 	record := receipt.Record{
 		SchemaVersion:        receipt.SchemaVersion,
 		ManifestVersion:      receipt.ManifestVersion,
-		ProductVersion:       receipt.ProductVersion,
+		ProductVersion:       buildinfo.Current().ProductVersion,
 		RuntimeArtifact:      receipt.RuntimeArtifact,
 		RuntimeLane:          fixture.Target.RuntimeLane,
 		FixtureName:          fixture.Name,
@@ -92,7 +97,7 @@ func Collect(ctx context.Context, fixtureName, output string) (Outcome, error) {
 		ArtifactPath:         artifactPath,
 		StartedAt:            started.Format(time.RFC3339Nano),
 		FinishedAt:           finished.Format(time.RFC3339Nano),
-		SideEffectSummary:    fixture.Behavior.SideEffectSummary,
+		SideEffectSummary:    result.SideEffectSummary,
 		CandidateEvaluations: decision.Evaluations,
 	}
 	if err := evidence.Create(output, record, payload); err != nil {

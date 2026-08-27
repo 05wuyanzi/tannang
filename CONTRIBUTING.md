@@ -9,6 +9,14 @@ Contributions are proposed by Pull Request. Each commit must include Developer
 Certificate of Origin sign-off using a `Signed-off-by` trailer. A Contributor
 License Agreement and copyright assignment are not required.
 
+Published maintainer commits that already anchor completed independent review
+or acceptance evidence are not rewritten solely to add a missing trailer. A
+missing historical trailer may be remediated only by a later DCO-signed
+maintainer commit that explicitly identifies the exact covered commit SHA(s)
+and records the signing maintainer's DCO attestation. This history-preservation
+exception is historical-only and maintainer-only; it does not attest unrelated
+third-party work or waive the `Signed-off-by` requirement for any new commit.
+
 Copied or adapted third-party material must disclose:
 
 - source URL;

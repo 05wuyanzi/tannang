@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/first-stage-evidence-package-v0.schema.json",
+  "title": "Tannang FirstStage Evidence Package Metadata v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "manifest_version",
+    "product_version",
+    "runtime_artifact",
+    "collection_id",
+    "started_at",
+    "finished_at",
+    "target_fingerprint",
+    "run_state",
+    "receipt_references",
+    "artifact_references",
+    "directory_layout"
+  ],
+  "properties": {
+    "schema_version": { "const": "1.0" },
+    "manifest_version": { "const": "1.0" },
+    "product_version": { "type": "string", "minLength": 1 },
+    "runtime_artifact": { "const": "tannang-first-stage" },
+    "collection_id": { "type": "string", "pattern": "^COL-[0-9a-f-]{36}$" },
+    "case_id": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "started_at": { "type": "string", "format": "date-time" },
+    "finished_at": { "type": "string", "format": "date-time" },
+    "target_fingerprint": { "$ref": "target-fingerprint-v0.schema.json" },
+    "run_state": { "enum": ["COMPLETE", "PARTIAL"] },
+    "orchestration_reason": { "const": "CANCELLED" },
+    "receipt_references": {
+      "type": "array",
+      "minItems": 1,
+      "uniqueItems": true,
+      "items": { "type": "string", "pattern": "^receipts/[A-Z0-9_]+\\.json$" }
+    },
+    "artifact_references": {
+      "type": "array",
+      "minItems": 0,
+      "maxItems": 1,
+      "items": { "$ref": "first-stage-receipt-v0.schema.json#/$defs/artifact_reference" }
+    },
+    "directory_layout": {
+      "type": "array",
+      "minItems": 8,
+      "uniqueItems": true,
+      "items": {
+        "enum": ["meta", "raw", "derived", "normalized", "receipts", "hashes", "handoff", "reports"]
+      }
+    }
+  }
+}

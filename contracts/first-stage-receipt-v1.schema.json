@@ -1,0 +1,159 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/first-stage-receipt-v1.schema.json",
+  "title": "Tannang FirstStage Receipt v1.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "manifest_version", "product_version", "runtime_artifact",
+    "collection_id", "target_fingerprint", "requested_capability", "capability",
+    "compatibility", "attempted", "execution", "acquisition_started_at",
+    "acquisition_finished_at"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.1"},
+    "manifest_version": {"const": "1.0"},
+    "product_version": {"type": "string", "minLength": 1},
+    "runtime_artifact": {"const": "tannang-first-stage-multi"},
+    "collection_id": {"type": "string", "pattern": "^COL-[0-9a-f-]{36}$"},
+    "case_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "target_fingerprint": {"$ref": "target-fingerprint-v0.schema.json"},
+    "requested_capability": {"$ref": "#/$defs/request"},
+    "capability": {"$ref": "#/$defs/capability"},
+    "selected_provider": {"$ref": "#/$defs/provider"},
+    "compatibility": {"enum": ["AVAILABLE", "DEGRADED", "UNAVAILABLE"]},
+    "compatibility_reason": {"$ref": "#/$defs/reason"},
+    "candidate_evaluations": {"type": "array", "items": {"$ref": "#/$defs/evaluation"}},
+    "attempted": {"type": "boolean"},
+    "execution": {"$ref": "#/$defs/execution"},
+    "orchestration_reason": {"enum": ["UNKNOWN_CAPABILITY", "RESOLUTION_FAILED", "CANCELLED", "PACKAGE_FINALIZATION_FAILED"]},
+    "missing_evidence": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "artifact_reference": {"$ref": "#/$defs/artifact"},
+    "acquisition_started_at": {"type": "string", "format": "date-time"},
+    "acquisition_finished_at": {"type": "string", "format": "date-time"}
+  },
+  "allOf": [
+    {
+      "oneOf": [
+        {
+          "properties": {"requested_capability": {"properties": {"id": {"const": "PROCESS_IDENTITY_SNAPSHOT"}}, "required": ["id"]}},
+          "required": ["requested_capability"]
+        },
+        {
+          "properties": {"requested_capability": {"properties": {"id": {"const": "WINDOWS_EVENT_LOG_SYSTEM_CHANNEL"}}, "required": ["id"]}},
+          "required": ["requested_capability"]
+        }
+      ]
+    },
+    {
+      "if": {"properties": {"requested_capability": {"properties": {"id": {"const": "PROCESS_IDENTITY_SNAPSHOT"}}, "required": ["id"]}}, "required": ["requested_capability"]},
+      "then": {
+        "properties": {
+          "capability": {"$ref": "#/$defs/process_capability"},
+          "selected_provider": {"$ref": "#/$defs/process_provider"},
+          "candidate_evaluations": {"items": {"$ref": "#/$defs/process_evaluation"}},
+          "artifact_reference": {"$ref": "#/$defs/process_artifact"}
+        }
+      },
+      "else": {
+        "properties": {
+          "requested_capability": {"properties": {"protected": {"type": "boolean"}}},
+          "capability": {"$ref": "#/$defs/eventlog_capability"},
+          "selected_provider": {"$ref": "#/$defs/eventlog_provider"},
+          "candidate_evaluations": {"items": {"$ref": "#/$defs/eventlog_evaluation"}},
+          "artifact_reference": {"$ref": "#/$defs/eventlog_artifact"}
+        }
+      }
+    },
+    {
+      "oneOf": [
+        {
+          "properties": {"compatibility": {"const": "UNAVAILABLE"}},
+          "not": {"required": ["selected_provider"]}
+        },
+        {
+          "properties": {"compatibility": {"enum": ["AVAILABLE", "DEGRADED"]}},
+          "required": ["selected_provider", "compatibility_reason", "candidate_evaluations"],
+          "properties": {"candidate_evaluations": {"minItems": 1}}
+        }
+      ]
+    },
+    {
+      "if": {"properties": {"attempted": {"const": false}}, "required": ["attempted"]},
+      "then": {"properties": {"execution": {"properties": {"state": {"const": "SKIPPED"}}, "required": ["state"]}}}
+    },
+    {
+      "if": {"required": ["selected_provider"]},
+      "then": {"required": ["compatibility_reason", "candidate_evaluations"], "properties": {"candidate_evaluations": {"minItems": 1}}}
+    },
+    {
+      "if": {"required": ["orchestration_reason"]},
+      "then": {
+        "properties": {
+          "attempted": {"const": false},
+          "execution": {"properties": {"reason": {"const": "NONE"}}, "required": ["reason"]}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"orchestration_reason": {"const": "PACKAGE_FINALIZATION_FAILED"}}, "required": ["orchestration_reason"]},
+      "then": {
+        "required": ["selected_provider", "compatibility_reason", "candidate_evaluations", "missing_evidence"],
+        "properties": {
+          "execution": {"properties": {"state": {"const": "SKIPPED"}, "reason": {"const": "NONE"}}, "required": ["state", "reason"]},
+          "missing_evidence": {"const": ["The requested evidence is absent because package staging preparation failed before Provider execution."]}
+        },
+        "not": {"required": ["artifact_reference"]}
+      }
+    },
+    {
+      "if": {"required": ["artifact_reference"]},
+      "then": {
+        "properties": {
+          "attempted": {"const": true},
+          "execution": {"properties": {"state": {"enum": ["COLLECTED", "PARTIAL"]}}, "required": ["state"]}
+        }
+      }
+    },
+    {
+      "if": {"properties": {"execution": {"properties": {"state": {"enum": ["COLLECTED", "PARTIAL"]}}, "required": ["state"]}}, "required": ["execution"]},
+      "then": {"required": ["artifact_reference"]}
+    },
+    {
+      "if": {"properties": {"orchestration_reason": {"const": "CANCELLED"}}, "required": ["orchestration_reason"]},
+      "then": {"not": {"required": ["artifact_reference"]}
+      }
+    }
+  ],
+  "$defs": {
+    "request": {
+      "type": "object", "additionalProperties": false,
+      "required": ["id", "priority", "protected"],
+      "properties": {"id": {"enum": ["PROCESS_IDENTITY_SNAPSHOT", "WINDOWS_EVENT_LOG_SYSTEM_CHANNEL"]}, "priority": {"enum": ["EARLY", "NORMAL", "LATE"]}, "protected": {"type": "boolean"}}
+    },
+    "capability": {"$ref": "capability-v0.schema.json"},
+    "process_capability": {
+      "allOf": [
+        {"$ref": "#/$defs/capability"},
+        {"properties": {"id": {"const": "PROCESS_IDENTITY_SNAPSHOT"}, "description": {"const": "Capture a minimal snapshot of visible Windows process identities: process ID, parent process ID, and executable name."}, "acquisition_semantics": {"const": "STATE_SNAPSHOT"}, "sensitivity": {"const": "medium"}}}
+      ]
+    },
+    "eventlog_capability": {
+      "allOf": [
+        {"$ref": "#/$defs/capability"},
+        {"properties": {"id": {"const": "WINDOWS_EVENT_LOG_SYSTEM_CHANNEL"}, "description": {"const": "Capture the currently retained records from the local Windows System Event Log channel as one native EVTX export."}, "acquisition_semantics": {"const": "EXISTING_ARTIFACT_EXPORT"}, "sensitivity": {"const": "high"}}}
+      ]
+    },
+    "provider": {"type": "object", "additionalProperties": false, "required": ["id", "class"], "properties": {"id": {"enum": ["windows-toolhelp-process-snapshot", "windows-wevtapi-system-channel"]}, "class": {"const": "FIRST_PARTY_NATIVE"}}},
+    "process_provider": {"allOf": [{"$ref": "#/$defs/provider"}, {"properties": {"id": {"const": "windows-toolhelp-process-snapshot"}}}]},
+    "eventlog_provider": {"allOf": [{"$ref": "#/$defs/provider"}, {"properties": {"id": {"const": "windows-wevtapi-system-channel"}}}]},
+    "reason": {"enum": ["NONE", "PRIVILEGE_REQUIRED", "API_UNAVAILABLE", "DEPENDENCY_MISSING", "TARGET_STATE_RESTRICTED", "TIMEOUT", "CANCELLED", "PROVIDER_ERROR", "POLICY_DISABLED", "UNSUPPORTED_OS", "UNSUPPORTED_ARCH"]},
+    "execution": {"type": "object", "additionalProperties": false, "required": ["state", "reason", "side_effect_summary"], "properties": {"state": {"enum": ["COLLECTED", "PARTIAL", "SKIPPED", "FAILED", "BLOCKED"]}, "reason": {"$ref": "#/$defs/reason"}, "detail": {"type": "string"}, "side_effect_summary": {"type": "string", "minLength": 1}}},
+    "evaluation": {"type": "object", "additionalProperties": false, "required": ["provider_id", "compatibility", "reason", "eligible", "score"], "properties": {"provider_id": {"type": "string", "minLength": 1}, "compatibility": {"enum": ["AVAILABLE", "DEGRADED", "UNAVAILABLE"]}, "reason": {"$ref": "#/$defs/reason"}, "eligible": {"type": "boolean"}, "score": {"type": "integer"}}},
+    "process_evaluation": {"allOf": [{"$ref": "#/$defs/evaluation"}, {"properties": {"provider_id": {"const": "windows-toolhelp-process-snapshot"}}}]},
+    "eventlog_evaluation": {"allOf": [{"$ref": "#/$defs/evaluation"}, {"properties": {"provider_id": {"const": "windows-wevtapi-system-channel"}}}]},
+    "artifact": {"type": "object", "additionalProperties": false, "required": ["path", "media_type", "content_schema_id", "raw_or_derived", "size", "sha256"], "properties": {"path": {"enum": ["derived/process-identity-snapshot.ndjson", "raw/windows-event-log-system.evtx"]}, "media_type": {"enum": ["application/x-ndjson", "application/x-evtx"]}, "content_schema_id": {"type": "string", "minLength": 1}, "raw_or_derived": {"enum": ["RAW", "DERIVED"]}, "size": {"type": "integer", "minimum": 0}, "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}}},
+    "process_artifact": {"allOf": [{"$ref": "#/$defs/artifact"}, {"properties": {"path": {"const": "derived/process-identity-snapshot.ndjson"}, "media_type": {"const": "application/x-ndjson"}, "content_schema_id": {"const": "https://github.com/05wuyanzi/tannang/contracts/process-identity-snapshot-record-v0.schema.json"}, "raw_or_derived": {"const": "DERIVED"}}}]},
+    "eventlog_artifact": {"allOf": [{"$ref": "#/$defs/artifact"}, {"properties": {"path": {"const": "raw/windows-event-log-system.evtx"}, "media_type": {"const": "application/x-evtx"}, "content_schema_id": {"const": "urn:tannang:artifact:windows-event-log-system-evtx-v0"}, "raw_or_derived": {"const": "RAW"}}}]}
+  }
+}

@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**Status:** Pre-alpha · Synthetic core only · Not production ready
+**Status:** Pre-alpha · Scope-complete Technical Preview candidate · Protected Windows baseline candidate active · Not production ready
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -14,10 +14,67 @@ Tannang is a Windows-first project for describing acquisition intent,
 evaluating provider compatibility, recording execution outcomes, and packaging
 evidence with auditable integrity metadata.
 
-The current repository implements a synthetic control path only. It uses
-embedded fixtures and does not inspect or collect data from the local Windows
-host. The repository slug and CLI are `tannang`; the Go module is
+The normal `collect --output` CLI runs the fixed non-removable protected
+baseline capabilities `PROCESS_IDENTITY_SNAPSHOT`,
+`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`, `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`, and
+`WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT` in the event-capable FirstStage
+candidate. The fixed `--process-identity-snapshot`,
+`--windows-event-log-system`, `--windows-host-os-identity`, and
+`--windows-transport-endpoints` forms are idempotent confirmation flags; they
+do not add supplemental requests. The explicit `--synthetic`
+path remains available for embedded fixtures and does not perform real
+incident-response evidence collection. The bounded Windows Target Fingerprint
+used by the fixed real FirstStage reads limited local compatibility, resource,
+privilege, and output-volume facts; it is not a Provider, performs no network
+collection, and does not make this pre-alpha repository production ready. The
+repository slug and CLI are `tannang`; the Go module is
 `github.com/05wuyanzi/tannang`.
+
+The repository contains fixed library-level implementations for four narrow
+first-party native Windows Providers. `PROCESS_IDENTITY_SNAPSHOT` uses the Tool
+Help process snapshot API and emits only process ID, parent process ID, and
+executable name as NDJSON to a caller-owned writer. The fixed
+`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` capability uses the documented native
+Windows Event Log API to export the fixed local `System` channel as one EVTX
+artifact. `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` uses the fixed native host/OS
+identity APIs and writes one bounded JSON artifact. The
+`WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT` capability uses the local Windows IP
+Helper `GetExtendedTcpTable` and `GetExtendedUdpTable` APIs to record a bounded
+TCP/UDP endpoint snapshot with owning PID. All four capabilities are the
+protected baseline. The promoted baseline has passed bounded real-host
+acceptance on one exact Windows amd64 environment through both the default
+headless collection path and the thin one-click GUI path. This bounded
+observation does not establish a general Windows support matrix.
+The bounded implementation provides a fixed library-level FirstStage
+constructor, code-level protected-baseline membership, and a capability-keyed
+four-artifact Evidence Package adapter. The active
+protected baseline uses that fixed path for normal
+`collect --output`; each of the four explicit real flags remains a compatible
+confirmation of the same baseline and does not duplicate a request. It does not
+expose Provider selection or extra capabilities. Default tests inject fake
+acquisition and do not enumerate host processes.
+Target compatibility is limited
+to `amd64` and `x86`; Go build validation uses `windows/amd64` and compile-only
+`windows/386`, which is not a native x86 real-host acceptance claim.
+
+The Host/OS identity Provider is `windows-native-host-os-identity`
+(`FIRST_PARTY_NATIVE`). It uses `GetComputerNameExW(ComputerNamePhysicalDnsHostname)`,
+`RtlGetVersion`, and `GetNativeSystemInfo` to write the exact fields
+`computer_name`, `os_major`, `os_minor`, `os_build`, and
+`native_architecture` to `derived/windows-host-os-identity.json`. The artifact is
+`application/json`, schema
+`urn:tannang:artifact:windows-host-os-identity-json-v0`, and `DERIVED`.
+
+The repository also defines a library-only FirstStage orchestration contract.
+The existing `NewFirstStage` path remains synthetic-only and behaviorally
+unchanged. It merges a trusted protected baseline with additive requests,
+acquires one immutable Target Fingerprint, resolves and executes selected
+synthetic Providers sequentially within each Run, accounts for every request,
+and coordinates a bounded reference-only Finalizer seam. The dedicated process
+snapshot constructor is a separate, fixed path and cannot inject an arbitrary
+Provider. One FirstStage instance rejects overlapping Runs rather than queuing
+them; separate instances are independent. Normal product collection and its
+explicit compatibility flag use this same fixed real path.
 
 ## Why Tannang exists
 
@@ -29,22 +86,43 @@ receipts, status separation, and deterministic package verification.
 
 ## Current capabilities
 
-The pre-alpha synthetic core currently provides:
+The pre-alpha implementation currently provides:
 
-- a CLI for synthetic collection and package verification;
+- normal CLI collection with the four-capability protected real baseline, an
+  explicit synthetic path, and package verification;
 - Capability and Target Fingerprint models;
 - a Provider abstraction and compatibility Resolver;
+- fixed, library-only `PROCESS_IDENTITY_SNAPSHOT`,
+  `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`,
+  `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`, and
+  `WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT` Provider implementations
+  with a synchronous caller-owned writer boundary and reviewed benign Windows
+  acceptance;
+- a thin native WinForms GUI over the existing CLI child-process boundary,
+  with child-driven runtime observability and bounded child-process failure
+  diagnostics;
+- a deterministic repository-native portable Windows GUI bundle builder with
+  self-contained `win-x64` runtime provenance and bundled redistribution
+  license/notice material;
+- a synthetic-compatible FirstStage orchestration contract plus a fixed
+  real-provider FirstStage path with explicit per-request accounting;
 - an embedded Synthetic Provider with end-to-end fixtures;
 - separate compatibility and execution states;
 - execution receipt generation;
 - a fixed Evidence Package layout;
-- a SHA-256 integrity manifest and package verifier; and
+- a SHA-256 integrity manifest and package verifier;
+- a Windows path and reparse-point safety baseline for package I/O; and
 - synthetic end-to-end coverage for successful, partial, unavailable,
   blocked, and provider-failure outcomes.
 
 Compatibility uses `AVAILABLE`, `DEGRADED`, and `UNAVAILABLE`. Execution uses
 `COLLECTED`, `PARTIAL`, `SKIPPED`, `FAILED`, and `BLOCKED`. A partial or blocked
-attempt is never presented as complete collection.
+attempt is never presented as complete collection. Application orchestration
+reasons and run `COMPLETE`/`PARTIAL`/`FAILED` states remain separate from those
+Resolver and Provider domains.
+Execution reason `CANCELLED` means an attempted Provider was explicitly
+cancelled; application `OrchestrationReason=CANCELLED` continues to describe
+orchestration-owned cancellation, including selected work that was not run.
 
 ## Architecture overview
 
@@ -71,9 +149,15 @@ Evidence Package
 ```
 
 The provider contract defines `WINDOWS_INBOX`, `FIRST_PARTY_NATIVE`, and
-`EXTERNAL_BACKEND`. No real provider for those classes is implemented yet.
-`SYNTHETIC_TEST` is the only current provider implementation and is restricted
-to testing with embedded data.
+`EXTERNAL_BACKEND`. The bounded `FIRST_PARTY_NATIVE` process-snapshot, Event
+Log, Host/OS identity, and transport-endpoint Providers are the protected
+capabilities used by normal `collect --output` and by the compatible explicit
+confirmation forms. `--windows-event-log-system` accepts no channel or query
+argument, `--windows-host-os-identity` accepts no field-selection argument, and
+`--windows-transport-endpoints` accepts no table or filter argument; none of
+these flags duplicates a protected request.
+`SYNTHETIC_TEST` remains the only class reachable through `--synthetic`; the
+modes are mutually exclusive.
 
 See [`contracts/`](contracts/) for machine-readable contracts and
 [`docs/architecture/`](docs/architecture/) for the detailed architecture and
@@ -81,23 +165,164 @@ security boundaries.
 
 ## Quick start
 
-**Synthetic only. These commands do not collect data from the host.**
+**Synthetic collection. These commands do not collect data from the host.**
 
 With Go 1.21 or later, run from the repository root:
 
-```console
+```powershell
 go run ./cmd/tannang --help
-go run ./cmd/tannang collect --synthetic available-collected --output ./tannang-demo-package
-go run ./cmd/tannang verify ./tannang-demo-package
+$package = Join-Path (Get-Location) "tannang-demo-package"
+go run ./cmd/tannang collect --synthetic available-collected --output $package
+go run ./cmd/tannang verify $package
 ```
 
-The output path must not already exist. Collection reads the named embedded
-fixture, creates a synthetic Evidence Package, and refuses to overwrite an
-existing package.
+The output path must be a canonical absolute path on allowed local fixed or
+removable storage, its parent must exist, and the output itself must not exist.
+Collection reads the named embedded fixture, creates a synthetic Evidence
+Package, and refuses unsafe paths or overwrite.
+
+### Build identity and portable headless artifact
+
+`tannang version` returns one bounded JSON document containing the base product
+version, source revision and modified state reported by Go build metadata, Go
+version, and target OS/architecture. It performs no acquisition and writes no
+Evidence Package.
+
+The local Windows amd64 helper builds the current checkout into a new external
+directory containing exactly `tannang.exe`, `BUILD-INFO.json`, `LICENSE`, and
+`SHA256SUMS.txt`:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-windows-amd64.ps1 `
+  -OutputDirectory C:\absolute\new\tannang-portable -Mode Development
+```
+
+`Development` mode permits a dirty checkout and records it as modified. The
+default `RC` mode requires a clean worktree and empty index, and fails if the
+built identity is unknown or modified. The `RC` mode output is specifically a
+CLI portable-headless artifact: it is not the GUI bundle, a released RC, a
+supported Windows matrix, or a production-readiness claim.
+
+The repository-native GUI bundle builder composes that headless CLI artifact
+with the thin WinForms GUI and the required self-contained Windows desktop
+runtime material into a new external directory:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File scripts/release/build-windows-gui-amd64.ps1 `
+  -OutputDirectory C:\absolute\new\tannang-gui-portable -Mode Development
+```
+
+Its `RC` mode records a clean, known source identity; `Development` mode is
+explicitly allowed to record a modified checkout. The bundle is portable and
+offline-oriented after dependencies are available, but this builder mode is
+not itself a released RC or a production-readiness claim. One exact merged-dev
+RC-mode candidate at revision
+`82139012116a434cc050b4cdc4e6771db8e0d309` completed a human-operated elevated
+Windows amd64 GUI end-to-end acceptance for the protected
+`PROCESS_IDENTITY_SNAPSHOT` scope; the GUI reached `COMPLETE` and independent
+package verification passed. See
+[`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md). This
+single bounded result does not establish a general Windows support matrix,
+M5 completion, RC readiness, or production readiness.
+
+Initial sanitized Windows amd64 evidence is recorded in
+[`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md). Revision
+`1d581a801c5546e7dd86cc9f41cfdc9051eb93a3` was validated on the exact
+host-reported Microsoft Windows 11 Pro for Workstations 25H2 environment,
+version `10.0.26200`, build `26200.8894`, amd64. The observed process was
+elevated, so non-elevated execution and every other Windows environment remain
+untested. This single row is initial evidence, not a general Windows support
+claim; its raw Evidence Package and complete logs are not public.
+
+The scope-complete Technical Preview candidate at revision
+`c6e4c3ced7687383a4de8a29848fd3d4f48ae959` (tree
+`7742624f95d48c350ee7a8fb76180ba70f311bb4`) completed one default headless and
+one human-operated thin-GUI acceptance on Windows `10.0`, build `26200`,
+amd64, observed not elevated. Both paths reached `COMPLETE`, produced the
+four-capability protected baseline, and passed independent package verification
+using FirstStage 1.3 / manifest 1.0 and runtime
+`tannang-first-stage-multi-v1.3`. This is exact-host candidate evidence, not a
+released Technical Preview, general Windows support, or production-readiness
+claim.
+
+## Protected Windows baseline candidate
+
+On Windows, normal `collect --output` runs the non-removable protected baseline
+in this exact order:
+
+1. `PROCESS_IDENTITY_SNAPSHOT`
+2. `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`
+3. `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`
+4. `WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT`
+
+All four current producer requests are protected. `--case-id` remains optional.
+The four explicit real forms confirm the same baseline request and do not cause
+duplicate acquisition, Receipt, or artifact creation. Each invocation creates
+an independent Collection ID and Evidence Package, or reports honest partial,
+skipped, blocked, failed, or finalization outcomes. It does not provide risk
+scoring, malware verdicts, remediation, credential collection, or broad
+endpoint enumeration.
+
+The Event Log confirmation form is not a separate supplemental capability:
+
+```powershell
+$package = Join-Path (Get-Location) "tannang-process-and-system-log"
+go run ./cmd/tannang collect --windows-event-log-system --output $package
+go run ./cmd/tannang verify $package
+```
+
+It confirms collection of only the currently retained local `System` channel as
+one native EVTX artifact. It does not accept arbitrary channel names, queries,
+Event ID filters, remote sessions, or log-configuration changes. The promoted
+four-capability protected baseline has passed bounded real-host acceptance on one
+exact Windows amd64 environment through both the default headless path and
+the thin one-click GUI path; this candidate does not claim general Windows
+support.
+
+The Host/OS identity capability is a fixed local state snapshot, not broad host
+inventory. It writes `derived/windows-host-os-identity.json` with exactly
+`computer_name`, `os_major`, `os_minor`, `os_build`, and
+`native_architecture`, using the native Windows APIs documented in the
+architecture overview. The `--windows-host-os-identity` form is confirmation-only
+and idempotent.
+
+The transport endpoint capability is a fixed local state snapshot. Its
+`FIRST_PARTY_NATIVE` Provider is
+`windows-iphlpapi-transport-endpoints`, using the Windows IP Helper APIs
+`GetExtendedTcpTable` and `GetExtendedUdpTable`. It observes TCP IPv4, TCP IPv6,
+UDP IPv4, and UDP IPv6 tables with owning PID and writes one derived NDJSON
+artifact at `derived/windows-transport-endpoints.ndjson` with media type
+`application/x-ndjson` and schema
+`urn:tannang:artifact:windows-transport-endpoint-record-v0`.
+
+This is a bounded point-in-time observation. It performs no remote network I/O,
+probing, scanning, packet capture, DNS/name resolution, adapter/route/ARP/
+firewall inventory, process enrichment, or active trace, and its observations
+are not transactionally simultaneous with the process snapshot.
+
+```powershell
+$package = Join-Path (Get-Location) "tannang-process-snapshot"
+go run ./cmd/tannang collect --output $package --case-id CASE-01
+go run ./cmd/tannang verify $package
+```
+
+The backward-compatible explicit form remains accepted:
+
+```powershell
+go run ./cmd/tannang collect --process-identity-snapshot --output $package
+```
+
+This protected-baseline promotion is implemented on the candidate branch and
+has passed its bounded post-promotion real-host acceptance. It is not a
+comprehensive capability, production-ready, main integration, or release claim.
 
 ## Evidence package
 
 A package uses this fixed top-level layout:
+Historical process-only v1.0 packages, earlier Process/Event Log v1.1 packages,
+and the R82 supplemental Host/OS identity v1.2 receipts with `protected=false`
+remain valid for backward-compatible verification; promotion changes default
+activation for new real collections, not prior evidence validity.
 
 ```text
 meta/
@@ -110,41 +335,71 @@ handoff/
 reports/
 ```
 
-Package creation uses a temporary sibling directory and publishes the final
-path only after integrity verification succeeds. The manifest records sorted
-paths, sizes, and SHA-256 values. Verification rejects missing, modified,
-extra, linked, duplicated, non-canonical, or undeclared package content.
+Package creation uses a guarded temporary sibling, protects every child write,
+and publishes the final path by same-parent rename only after integrity
+verification succeeds. The manifest records sorted paths, sizes, and SHA-256
+values. Verification rejects missing, modified, extra, linked, duplicated,
+non-canonical, undeclared, or reparse-directed package content.
 
-See [Evidence package v0](docs/architecture/evidence-package.md) for details.
+See [Evidence package v0 and the bounded FirstStage v1.3 extension](docs/architecture/evidence-package.md) for details.
 
 ## Security and collection model
 
 - Acquisition intent is represented explicitly by a Capability.
 - Resolver decisions and execution results remain separate and auditable.
+- FirstStage runs Providers sequentially within a Run, rejects an overlapping
+  Run on the same instance, never silently removes protected requests, and
+  records missing evidence explicitly.
 - Receipts record the request, target fingerprint, provider decision, outcome,
   reason, timestamps, and side-effect summary.
 - The integrity manifest makes package contents independently verifiable.
+- Windows package I/O rejects reparse points, UNC and mapped remote paths,
+  special device namespaces, ambiguous paths, and existing output roots.
 - `ACTIVE_TRACE` is policy-disabled and is not currently implemented.
 - No third-party binary is bundled or downloaded automatically.
 - Optional external backends remain user-supplied, separate-process
   integrations and are not executed by the current synthetic core.
 
-See [Genesis security boundaries](docs/architecture/security-boundaries.md).
+See [Genesis security boundaries](docs/architecture/security-boundaries.md)
+and [Windows path safety v0](docs/architecture/windows-path-safety.md).
 
 ## Current limitations
 
 ```yaml
-supported_windows_matrix: not_yet_established
-real_windows_provider: not_yet_enabled
-real_collection: false
+supported_windows_matrix: initial_evidence_available
+m5_bounded_acceptance: complete
+portable_gui_bundle_builder: true
+portable_gui_exact_acceptance: true
+real_windows_provider: true
+real_collection: true
+real_collection_scope: PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL; WINDOWS_HOST_OS_IDENTITY_SNAPSHOT; WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT
+supplemental_real_capability: none
+post_promotion_eventlog_acceptance: complete_bounded_exact_host
+post_promotion_host_identity_acceptance: complete_bounded_exact_host
+post_promotion_transport_endpoint_acceptance: complete_bounded_exact_host_headless_and_gui
+default_firststage_schema: 1.3
+default_manifest_version: 1.0
+default_runtime_artifact: tannang-first-stage-multi-v1.3
+firststage_real_provider_activation: true
+protected_baseline_activation: true
+production_package_adapter: true
+cli_real_provider_activation: true
 active_trace: false
+rc_ready: false
 production_ready: false
 forensic_certification: none
 judicial_validation: none
 ```
 
-There is no real Windows acquisition, external backend integration, packet
-capture, or supported Legacy/Heritage Windows runtime in this release.
+The normal CLI activation runs the fixed FirstStage protected baseline, which
+in this candidate contains all four reviewed capabilities and cannot be removed
+by a CLI option. `--process-identity-snapshot`, `--windows-event-log-system`,
+`--windows-host-os-identity`, and `--windows-transport-endpoints` are fixed
+confirmation-only flags and do not duplicate their protected requests.
+`--synthetic` remains
+an explicit non-real fixture path. There is no
+external backend integration, packet capture, or supported Legacy/Heritage
+Windows runtime in this release.
 `LEGACY` and `HERITAGE` values in synthetic fixtures are test inputs, not
 support declarations.
 
@@ -152,13 +407,45 @@ Tannang currently targets Windows. Its evidence and orchestration contracts
 are intentionally separated from provider implementations; this does not
 imply support for any additional platform.
 
+The current synthetic `execution.Result.Payload` is fixture compatibility, not
+a transport contract for real Provider artifacts. Real Providers receive only
+caller-owned staging seams: process identity uses a synchronous writer, the
+fixed Event Log Provider receives one protected absolute file path, and the Host
+and transport Providers write bounded observations to caller-owned sinks. The
+bounded FirstStage adapter owns path choice, close/flush, retain/discard,
+hashing, and publication for the four known artifact bindings; it is not a
+generic workspace or extraction framework.
+
 ## Roadmap
 
-The next Windows-focused engineering work is expected to establish the
-supported target matrix, complete and benign-test path containment and
-reparse-point behavior, and then introduce narrowly scoped real providers only
-after their safety boundaries are verified. None of that work is implemented
-or supported by the current pre-alpha release.
+M4 Minimum Useful Baseline is complete on `dev` with the existing protected
+`PROCESS_IDENTITY_SNAPSHOT`. The event-capable branch adds the protected System
+Event Log baseline, followed by Host/OS identity and transport endpoint
+snapshots. The four-capability protected baseline has passed bounded
+post-promotion real-host acceptance through both the default headless and thin
+one-click GUI paths. This remains a bounded candidate-state observation, not a
+general Windows support claim.
+
+The bounded M5 productization milestone is complete for its deliberately narrow
+scope: the `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI`, deterministic
+portable GUI bundle builder, child-process observability and bounded failure
+diagnostics are integrated, and one exact merged-dev GUI candidate passed the
+acceptance contract recorded in
+[`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md).
+The first post-M5 Event Log capability is implemented as the protected System
+Event Log baseline, followed by Host/OS identity and transport endpoint
+promotions. The bounded post-promotion benign Windows acceptance for the
+four-capability baseline has passed through both product paths. This does not
+constitute a released RC, a general supported Windows family
+matrix, or production readiness; `RC_READY=false` and `production_ready=false`
+remain explicit. TUI remains HOLD.
+
+After a future Technical Preview publication, maintenance is intended to focus
+on correctness, security, Windows compatibility, and build/package integrity.
+Broad forensic capability expansion is not currently planned.
+
+The current path baseline does not claim resistance to privileged concurrent
+namespace races, and this pre-alpha repository remains non-production.
 
 ## Third-party boundary
 
@@ -188,3 +475,14 @@ open a public Issue for a suspected vulnerability. See
 
 Tannang is licensed under the Mozilla Public License 2.0. See
 [LICENSE](LICENSE).
+
+## Active FirstStage protected baseline candidate
+
+The integrated implementation provides narrow library-level
+`PROCESS_IDENTITY_SNAPSHOT`, fixed local System Event Log EVTX, Host/OS identity
+JSON, and transport endpoint NDJSON FirstStage bindings with guarded staging,
+receipts, and SHA-256 manifest verification. The normal CLI activation uses all
+four capabilities as the non-removable protected baseline; all four real flags
+remain compatibility confirmations and do not duplicate acquisition. The
+explicit synthetic path remains isolated. Bounded post-promotion acceptance
+has passed through both product paths; production-readiness remains false.

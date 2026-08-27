@@ -147,32 +147,36 @@ func (r *SyntheticRunner) Execute(
 ) execution.Result {
 	if request.AcquisitionSemantics == capability.ActiveTrace {
 		return execution.Result{
-			State:  execution.Blocked,
-			Reason: execution.ReasonPolicyDisabled,
-			Detail: "ACTIVE_TRACE is not executable in the genesis synthetic provider",
+			State:             execution.Blocked,
+			Reason:            execution.ReasonPolicyDisabled,
+			Detail:            "ACTIVE_TRACE is not executable in the genesis synthetic provider",
+			SideEffectSummary: "No evidence was collected; ACTIVE_TRACE was policy-disabled.",
 		}
 	}
 	select {
 	case <-ctx.Done():
 		return execution.Result{
-			State:  execution.Failed,
-			Reason: execution.ReasonTimeout,
-			Detail: "synthetic execution context ended",
+			State:             execution.Failed,
+			Reason:            execution.ReasonTimeout,
+			Detail:            "synthetic execution context ended",
+			SideEffectSummary: "No evidence was collected; the synthetic execution context ended.",
 		}
 	default:
 	}
 	if r.descriptor.Requirements.RequiresElevation && !target.Elevated {
 		return execution.Result{
-			State:  execution.Blocked,
-			Reason: execution.ReasonPrivilegeRequired,
-			Detail: r.fixture.Behavior.Detail,
+			State:             execution.Blocked,
+			Reason:            execution.ReasonPrivilegeRequired,
+			Detail:            r.fixture.Behavior.Detail,
+			SideEffectSummary: r.fixture.Behavior.SideEffectSummary,
 		}
 	}
 	return execution.Result{
-		State:   r.fixture.Behavior.ExecutionState,
-		Reason:  r.fixture.Behavior.Reason,
-		Detail:  r.fixture.Behavior.Detail,
-		Payload: append(json.RawMessage(nil), r.fixture.Behavior.Payload...),
+		State:             r.fixture.Behavior.ExecutionState,
+		Reason:            r.fixture.Behavior.Reason,
+		Detail:            r.fixture.Behavior.Detail,
+		SideEffectSummary: r.fixture.Behavior.SideEffectSummary,
+		Payload:           append(json.RawMessage(nil), r.fixture.Behavior.Payload...),
 	}
 }
 

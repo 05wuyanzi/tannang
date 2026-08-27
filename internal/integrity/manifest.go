@@ -6,6 +6,7 @@
 package integrity
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -17,6 +18,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/05wuyanzi/tannang/internal/pathsafe"
 )
 
 const ManifestPath = "hashes/manifest.json"
@@ -45,6 +48,9 @@ type Manifest struct {
 
 // Generate writes a canonical, sorted SHA-256 manifest for package files.
 func Generate(root string) error {
+	if err := pathsafe.ValidatePackageTree(root); err != nil {
+		return fmt.Errorf("validate package tree before manifest generation: %w", err)
+	}
 	observed, err := inventory(root)
 	if err != nil {
 		return err
@@ -61,8 +67,7 @@ func Generate(root string) error {
 		return fmt.Errorf("marshal integrity manifest: %w", err)
 	}
 	data = append(data, '\n')
-	path := filepath.Join(root, filepath.FromSlash(ManifestPath))
-	if err := os.WriteFile(path, data, 0o644); err != nil {
+	if err := pathsafe.WriteNewFile(root, ManifestPath, data, 0o644); err != nil {
 		return fmt.Errorf("write integrity manifest: %w", err)
 	}
 	return nil
@@ -70,23 +75,10 @@ func Generate(root string) error {
 
 // Verify rejects missing, modified, extra, linked, or malformed files.
 func Verify(root string) error {
-	rootInfo, err := os.Lstat(root)
-	if err != nil {
-		return fmt.Errorf("inspect package root: %w", err)
+	if err := pathsafe.ValidatePackageTree(root); err != nil {
+		return fmt.Errorf("validate package tree before reading manifest: %w", err)
 	}
-	if !rootInfo.IsDir() || rootInfo.Mode()&os.ModeSymlink != 0 {
-		return errors.New("package root must be a real directory")
-	}
-
-	manifestPath := filepath.Join(root, filepath.FromSlash(ManifestPath))
-	manifestInfo, err := os.Lstat(manifestPath)
-	if err != nil {
-		return fmt.Errorf("integrity manifest is required: %w", err)
-	}
-	if !manifestInfo.Mode().IsRegular() {
-		return errors.New("integrity manifest must be a regular file")
-	}
-	manifest, err := readManifest(manifestPath)
+	manifest, err := readManifest(root)
 	if err != nil {
 		return err
 	}
@@ -157,13 +149,12 @@ func Verify(root string) error {
 	return nil
 }
 
-func readManifest(path string) (Manifest, error) {
-	file, err := os.Open(path)
+func readManifest(root string) (Manifest, error) {
+	data, err := pathsafe.ReadFile(root, ManifestPath)
 	if err != nil {
-		return Manifest{}, fmt.Errorf("open integrity manifest: %w", err)
+		return Manifest{}, fmt.Errorf("read integrity manifest: %w", err)
 	}
-	defer file.Close()
-	decoder := json.NewDecoder(file)
+	decoder := json.NewDecoder(bytes.NewReader(data))
 	decoder.DisallowUnknownFields()
 	var manifest Manifest
 	if err := decoder.Decode(&manifest); err != nil {
@@ -185,6 +176,9 @@ type packageInventory struct {
 }
 
 func inventory(root string) (packageInventory, error) {
+	if err := pathsafe.ValidatePackageTree(root); err != nil {
+		return packageInventory{}, err
+	}
 	entries := make([]Entry, 0)
 	directoryCounts := make(map[string]int)
 	err := filepath.WalkDir(root, func(path string, item fs.DirEntry, walkErr error) error {
@@ -218,7 +212,7 @@ func inventory(root string) (packageInventory, error) {
 		}
 		parent := filepath.ToSlash(filepath.Dir(relative))
 		directoryCounts[parent]++
-		entry, err := hashFile(path, relative)
+		entry, err := hashFile(root, relative)
 		if err != nil {
 			return err
 		}
@@ -237,31 +231,38 @@ func inventory(root string) (packageInventory, error) {
 	return packageInventory{Directories: directories, Entries: entries}, nil
 }
 
-func hashFile(path, relative string) (Entry, error) {
-	file, err := os.Open(path)
+// HashFile hashes one existing package-relative file through PATHSAFE.
+func HashFile(root, relative string) (Entry, error) {
+	file, err := pathsafe.OpenFile(root, relative)
 	if err != nil {
 		return Entry{}, fmt.Errorf("open package file %s: %w", relative, err)
 	}
-	defer file.Close()
 	hash := sha256.New()
 	size, err := io.Copy(hash, file)
-	if err != nil {
-		return Entry{}, fmt.Errorf("hash package file %s: %w", relative, err)
+	closeErr := file.Close()
+	if err != nil || closeErr != nil {
+		return Entry{}, errors.Join(
+			wrapOptional("hash package file "+relative, err),
+			wrapOptional("close package file "+relative, closeErr),
+		)
 	}
 	return Entry{Path: relative, Size: size, SHA256: hex.EncodeToString(hash.Sum(nil))}, nil
 }
 
+func hashFile(root, relative string) (Entry, error) {
+	return HashFile(root, relative)
+}
+
+func wrapOptional(prefix string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", prefix, err)
+}
+
 func validateRelativePath(path string) error {
-	if path == "" || strings.Contains(path, "\\") || filepath.IsAbs(path) || filepath.VolumeName(path) != "" {
-		return errors.New("path must use package-relative forward slashes")
-	}
-	for _, part := range strings.Split(path, "/") {
-		if part == "" || part == "." || part == ".." {
-			return errors.New("path contains an unsafe component")
-		}
-	}
-	if filepath.ToSlash(filepath.Clean(filepath.FromSlash(path))) != path {
-		return errors.New("path is not canonical")
+	if err := pathsafe.ValidateRelativePath(path); err != nil {
+		return err
 	}
 	if path == ManifestPath {
 		return errors.New("manifest cannot declare itself")

@@ -15,6 +15,7 @@
         "DEPENDENCY_MISSING",
         "TARGET_STATE_RESTRICTED",
         "TIMEOUT",
+        "CANCELLED",
         "PROVIDER_ERROR",
         "POLICY_DISABLED",
         "UNSUPPORTED_OS",

@@ -1,0 +1,24 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/process-identity-snapshot-record-v0.schema.json",
+  "title": "Tannang Process Identity Snapshot Record v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["process_id", "parent_process_id", "executable_name"],
+  "properties": {
+    "process_id": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "parent_process_id": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "executable_name": {
+      "type": "string",
+      "minLength": 1
+    }
+  }
+}
