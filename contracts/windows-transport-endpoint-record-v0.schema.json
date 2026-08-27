@@ -1,0 +1,20 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/windows-transport-endpoint-record-v0.schema.json",
+  "title": "Tannang Windows transport endpoint record v0",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["protocol", "address_family", "local_address", "local_port", "local_scope_id", "remote_address", "remote_port", "remote_scope_id", "tcp_state", "owning_pid"],
+  "properties": {
+    "protocol": {"enum": ["TCP", "UDP"]},
+    "address_family": {"enum": ["IPv4", "IPv6"]},
+    "local_address": {"type": "string", "minLength": 1},
+    "local_port": {"type": "integer", "minimum": 0, "maximum": 65535},
+    "local_scope_id": {"type": ["integer", "null"], "minimum": 0, "maximum": 4294967295},
+    "remote_address": {"type": ["string", "null"], "minLength": 1},
+    "remote_port": {"type": ["integer", "null"], "minimum": 0, "maximum": 65535},
+    "remote_scope_id": {"type": ["integer", "null"], "minimum": 0, "maximum": 4294967295},
+    "tcp_state": {"type": ["integer", "null"], "minimum": 0, "maximum": 4294967295},
+    "owning_pid": {"type": "integer", "minimum": 0, "maximum": 4294967295}
+  }
+}

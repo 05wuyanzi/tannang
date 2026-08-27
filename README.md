@@ -4,7 +4,7 @@
 >
 > Portable, auditable Windows live-response acquisition and evidence orchestration.
 
-**Status:** Pre-alpha · Protected Windows baseline candidate active · Not production ready
+**Status:** Pre-alpha · Scope-complete Technical Preview candidate · Protected Windows baseline candidate active · Not production ready
 
 **English** | [简体中文](README.zh-CN.md)
 
@@ -16,11 +16,12 @@ evidence with auditable integrity metadata.
 
 The normal `collect --output` CLI runs the fixed non-removable protected
 baseline capabilities `PROCESS_IDENTITY_SNAPSHOT`,
-`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`, and
-`WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` in the event-capable FirstStage candidate.
-The fixed `--process-identity-snapshot`, `--windows-event-log-system`, and
-`--windows-host-os-identity` forms are retained as idempotent confirmation
-flags; they do not add supplemental requests. The explicit `--synthetic`
+`WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`, `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`, and
+`WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT` in the event-capable FirstStage
+candidate. The fixed `--process-identity-snapshot`,
+`--windows-event-log-system`, `--windows-host-os-identity`, and
+`--windows-transport-endpoints` forms are idempotent confirmation flags; they
+do not add supplemental requests. The explicit `--synthetic`
 path remains available for embedded fixtures and does not perform real
 incident-response evidence collection. The bounded Windows Target Fingerprint
 used by the fixed real FirstStage reads limited local compatibility, resource,
@@ -29,23 +30,26 @@ collection, and does not make this pre-alpha repository production ready. The
 repository slug and CLI are `tannang`; the Go module is
 `github.com/05wuyanzi/tannang`.
 
-The repository contains fixed library-level implementations for three narrow
+The repository contains fixed library-level implementations for four narrow
 first-party native Windows Providers. `PROCESS_IDENTITY_SNAPSHOT` uses the Tool
 Help process snapshot API and emits only process ID, parent process ID, and
 executable name as NDJSON to a caller-owned writer. The fixed
 `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL` capability uses the documented native
 Windows Event Log API to export the fixed local `System` channel as one EVTX
 artifact. `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` uses the fixed native host/OS
-identity APIs and writes one bounded JSON artifact. All three capabilities are
-the protected baseline. That promoted baseline has passed
-bounded real-host acceptance on one exact Windows amd64 environment through
-both the default headless collection path and the thin one-click GUI path.
-This bounded observation does not establish a general Windows support matrix.
+identity APIs and writes one bounded JSON artifact. The
+`WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT` capability uses the local Windows IP
+Helper `GetExtendedTcpTable` and `GetExtendedUdpTable` APIs to record a bounded
+TCP/UDP endpoint snapshot with owning PID. All four capabilities are the
+protected baseline. The promoted baseline has passed bounded real-host
+acceptance on one exact Windows amd64 environment through both the default
+headless collection path and the thin one-click GUI path. This bounded
+observation does not establish a general Windows support matrix.
 The bounded implementation provides a fixed library-level FirstStage
 constructor, code-level protected-baseline membership, and a capability-keyed
-three-artifact Evidence Package adapter. The active
+four-artifact Evidence Package adapter. The active
 protected baseline uses that fixed path for normal
-`collect --output`; each of the three explicit real flags remains a compatible
+`collect --output`; each of the four explicit real flags remains a compatible
 confirmation of the same baseline and does not duplicate a request. It does not
 expose Provider selection or extra capabilities. Default tests inject fake
 acquisition and do not enumerate host processes.
@@ -84,13 +88,14 @@ receipts, status separation, and deterministic package verification.
 
 The pre-alpha implementation currently provides:
 
-- normal CLI collection with the three-capability protected real baseline, an
+- normal CLI collection with the four-capability protected real baseline, an
   explicit synthetic path, and package verification;
 - Capability and Target Fingerprint models;
 - a Provider abstraction and compatibility Resolver;
 - fixed, library-only `PROCESS_IDENTITY_SNAPSHOT`,
-  `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`, and
-  `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT` Provider implementations
+  `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`,
+  `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`, and
+  `WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT` Provider implementations
   with a synchronous caller-owned writer boundary and reviewed benign Windows
   acceptance;
 - a thin native WinForms GUI over the existing CLI child-process boundary,
@@ -145,11 +150,12 @@ Evidence Package
 
 The provider contract defines `WINDOWS_INBOX`, `FIRST_PARTY_NATIVE`, and
 `EXTERNAL_BACKEND`. The bounded `FIRST_PARTY_NATIVE` process-snapshot, Event
-Log, and Host/OS identity Providers are the protected capabilities used by
-normal `collect --output` and by the compatible explicit confirmation forms.
-`--windows-event-log-system` accepts no channel or query argument, and
-`--windows-host-os-identity` accepts no field-selection argument; neither
-duplicates a protected request.
+Log, Host/OS identity, and transport-endpoint Providers are the protected
+capabilities used by normal `collect --output` and by the compatible explicit
+confirmation forms. `--windows-event-log-system` accepts no channel or query
+argument, `--windows-host-os-identity` accepts no field-selection argument, and
+`--windows-transport-endpoints` accepts no table or filter argument; none of
+these flags duplicates a protected request.
 `SYNTHETIC_TEST` remains the only class reachable through `--synthetic`; the
 modes are mutually exclusive.
 
@@ -228,17 +234,34 @@ elevated, so non-elevated execution and every other Windows environment remain
 untested. This single row is initial evidence, not a general Windows support
 claim; its raw Evidence Package and complete logs are not public.
 
+The scope-complete Technical Preview candidate at revision
+`c6e4c3ced7687383a4de8a29848fd3d4f48ae959` (tree
+`7742624f95d48c350ee7a8fb76180ba70f311bb4`) completed one default headless and
+one human-operated thin-GUI acceptance on Windows `10.0`, build `26200`,
+amd64, observed not elevated. Both paths reached `COMPLETE`, produced the
+four-capability protected baseline, and passed independent package verification
+using FirstStage 1.3 / manifest 1.0 and runtime
+`tannang-first-stage-multi-v1.3`. This is exact-host candidate evidence, not a
+released Technical Preview, general Windows support, or production-readiness
+claim.
+
 ## Protected Windows baseline candidate
 
-On Windows, normal `collect --output` runs the non-removable protected baseline,
-which in this candidate contains `PROCESS_IDENTITY_SNAPSHOT`, the fixed local
-`System` Event Log EVTX capability, and `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`.
-`--case-id` remains optional. The existing three explicit real forms confirm
-the same baseline request and do not cause duplicate acquisition, Receipt, or
-artifact creation. Each invocation creates an independent Collection ID and
-Evidence Package, or reports honest partial, skipped, blocked, failed, or
-finalization outcomes. It does not provide risk scoring, malware verdicts,
-remediation, credential collection, or broad endpoint enumeration.
+On Windows, normal `collect --output` runs the non-removable protected baseline
+in this exact order:
+
+1. `PROCESS_IDENTITY_SNAPSHOT`
+2. `WINDOWS_EVENT_LOG_SYSTEM_CHANNEL`
+3. `WINDOWS_HOST_OS_IDENTITY_SNAPSHOT`
+4. `WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT`
+
+All four current producer requests are protected. `--case-id` remains optional.
+The four explicit real forms confirm the same baseline request and do not cause
+duplicate acquisition, Receipt, or artifact creation. Each invocation creates
+an independent Collection ID and Evidence Package, or reports honest partial,
+skipped, blocked, failed, or finalization outcomes. It does not provide risk
+scoring, malware verdicts, remediation, credential collection, or broad
+endpoint enumeration.
 
 The Event Log confirmation form is not a separate supplemental capability:
 
@@ -251,9 +274,10 @@ go run ./cmd/tannang verify $package
 It confirms collection of only the currently retained local `System` channel as
 one native EVTX artifact. It does not accept arbitrary channel names, queries,
 Event ID filters, remote sessions, or log-configuration changes. The promoted
-three-capability protected baseline has passed bounded real-host acceptance on one
+four-capability protected baseline has passed bounded real-host acceptance on one
 exact Windows amd64 environment through both the default headless path and
-the thin one-click GUI path; this branch does not claim general Windows support.
+the thin one-click GUI path; this candidate does not claim general Windows
+support.
 
 The Host/OS identity capability is a fixed local state snapshot, not broad host
 inventory. It writes `derived/windows-host-os-identity.json` with exactly
@@ -261,6 +285,20 @@ inventory. It writes `derived/windows-host-os-identity.json` with exactly
 `native_architecture`, using the native Windows APIs documented in the
 architecture overview. The `--windows-host-os-identity` form is confirmation-only
 and idempotent.
+
+The transport endpoint capability is a fixed local state snapshot. Its
+`FIRST_PARTY_NATIVE` Provider is
+`windows-iphlpapi-transport-endpoints`, using the Windows IP Helper APIs
+`GetExtendedTcpTable` and `GetExtendedUdpTable`. It observes TCP IPv4, TCP IPv6,
+UDP IPv4, and UDP IPv6 tables with owning PID and writes one derived NDJSON
+artifact at `derived/windows-transport-endpoints.ndjson` with media type
+`application/x-ndjson` and schema
+`urn:tannang:artifact:windows-transport-endpoint-record-v0`.
+
+This is a bounded point-in-time observation. It performs no remote network I/O,
+probing, scanning, packet capture, DNS/name resolution, adapter/route/ARP/
+firewall inventory, process enrichment, or active trace, and its observations
+are not transactionally simultaneous with the process snapshot.
 
 ```powershell
 $package = Join-Path (Get-Location) "tannang-process-snapshot"
@@ -303,7 +341,7 @@ verification succeeds. The manifest records sorted paths, sizes, and SHA-256
 values. Verification rejects missing, modified, extra, linked, duplicated,
 non-canonical, undeclared, or reparse-directed package content.
 
-See [Evidence package v0 and the bounded FirstStage v1.2 extension](docs/architecture/evidence-package.md) for details.
+See [Evidence package v0 and the bounded FirstStage v1.3 extension](docs/architecture/evidence-package.md) for details.
 
 ## Security and collection model
 
@@ -334,13 +372,14 @@ portable_gui_bundle_builder: true
 portable_gui_exact_acceptance: true
 real_windows_provider: true
 real_collection: true
-real_collection_scope: PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL; WINDOWS_HOST_OS_IDENTITY_SNAPSHOT
+real_collection_scope: PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL; WINDOWS_HOST_OS_IDENTITY_SNAPSHOT; WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT
 supplemental_real_capability: none
 post_promotion_eventlog_acceptance: complete_bounded_exact_host
 post_promotion_host_identity_acceptance: complete_bounded_exact_host
-default_firststage_schema: 1.2
+post_promotion_transport_endpoint_acceptance: complete_bounded_exact_host_headless_and_gui
+default_firststage_schema: 1.3
 default_manifest_version: 1.0
-default_runtime_artifact: tannang-first-stage-multi-v1.2
+default_runtime_artifact: tannang-first-stage-multi-v1.3
 firststage_real_provider_activation: true
 protected_baseline_activation: true
 production_package_adapter: true
@@ -353,10 +392,11 @@ judicial_validation: none
 ```
 
 The normal CLI activation runs the fixed FirstStage protected baseline, which
-in this candidate contains all three reviewed capabilities and cannot be removed
+in this candidate contains all four reviewed capabilities and cannot be removed
 by a CLI option. `--process-identity-snapshot`, `--windows-event-log-system`,
-and `--windows-host-os-identity` are fixed confirmation-only flags and do not
-duplicate their protected requests. `--synthetic` remains
+`--windows-host-os-identity`, and `--windows-transport-endpoints` are fixed
+confirmation-only flags and do not duplicate their protected requests.
+`--synthetic` remains
 an explicit non-real fixture path. There is no
 external backend integration, packet capture, or supported Legacy/Heritage
 Windows runtime in this release.
@@ -369,21 +409,22 @@ imply support for any additional platform.
 
 The current synthetic `execution.Result.Payload` is fixture compatibility, not
 a transport contract for real Provider artifacts. Real Providers receive only
-caller-owned staging seams: process identity uses a synchronous writer and the
+caller-owned staging seams: process identity uses a synchronous writer, the
 fixed Event Log Provider receives one protected absolute file path, and the Host
-Provider writes one bounded JSON object to its caller-owned sink. The bounded
-FirstStage adapter owns path choice, close/flush, retain/discard, hashing, and
-publication for the three known artifact bindings; it is not a generic
-workspace or extraction framework.
+and transport Providers write bounded observations to caller-owned sinks. The
+bounded FirstStage adapter owns path choice, close/flush, retain/discard,
+hashing, and publication for the four known artifact bindings; it is not a
+generic workspace or extraction framework.
 
 ## Roadmap
 
 M4 Minimum Useful Baseline is complete on `dev` with the existing protected
-`PROCESS_IDENTITY_SNAPSHOT`. The event-capable branch adds the first additional
-real capability as the protected System Event Log baseline; its bounded
-post-promotion real-host acceptance passed through both the default headless and
-thin one-click GUI paths. This remains a bounded candidate-state observation,
-not a general Windows support claim.
+`PROCESS_IDENTITY_SNAPSHOT`. The event-capable branch adds the protected System
+Event Log baseline, followed by Host/OS identity and transport endpoint
+snapshots. The four-capability protected baseline has passed bounded
+post-promotion real-host acceptance through both the default headless and thin
+one-click GUI paths. This remains a bounded candidate-state observation, not a
+general Windows support claim.
 
 The bounded M5 productization milestone is complete for its deliberately narrow
 scope: the `HEADLESS CLI CORE + THIN NATIVE ONE-CLICK GUI`, deterministic
@@ -392,12 +433,16 @@ diagnostics are integrated, and one exact merged-dev GUI candidate passed the
 acceptance contract recorded in
 [`docs/acceptance/windows-amd64.md`](docs/acceptance/windows-amd64.md).
 The first post-M5 Event Log capability is implemented as the protected System
-Event Log baseline, and the subsequent Host/OS identity promotion is also
-implemented. Both bounded post-promotion benign Windows acceptances have passed
-through both product paths. This does not
+Event Log baseline, followed by Host/OS identity and transport endpoint
+promotions. The bounded post-promotion benign Windows acceptance for the
+four-capability baseline has passed through both product paths. This does not
 constitute a released RC, a general supported Windows family
 matrix, or production readiness; `RC_READY=false` and `production_ready=false`
 remain explicit. TUI remains HOLD.
+
+After a future Technical Preview publication, maintenance is intended to focus
+on correctness, security, Windows compatibility, and build/package integrity.
+Broad forensic capability expansion is not currently planned.
 
 The current path baseline does not claim resistance to privileged concurrent
 namespace races, and this pre-alpha repository remains non-production.
@@ -434,10 +479,10 @@ Tannang is licensed under the Mozilla Public License 2.0. See
 ## Active FirstStage protected baseline candidate
 
 The integrated implementation provides narrow library-level
-`PROCESS_IDENTITY_SNAPSHOT`, fixed local System Event Log EVTX, and Host/OS
-identity JSON FirstStage bindings with guarded staging, receipts, and SHA-256
-manifest verification. The normal CLI activation uses all three capabilities as
-the non-removable protected baseline; all three real flags remain compatibility
-confirmations and do not duplicate acquisition. The explicit synthetic path remains isolated.
-Bounded post-promotion acceptance has passed; production-readiness remains
-false.
+`PROCESS_IDENTITY_SNAPSHOT`, fixed local System Event Log EVTX, Host/OS identity
+JSON, and transport endpoint NDJSON FirstStage bindings with guarded staging,
+receipts, and SHA-256 manifest verification. The normal CLI activation uses all
+four capabilities as the non-removable protected baseline; all four real flags
+remain compatibility confirmations and do not duplicate acquisition. The
+explicit synthetic path remains isolated. Bounded post-promotion acceptance
+has passed through both product paths; production-readiness remains false.

@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/05wuyanzi/tannang/contracts/first-stage-evidence-package-v3.schema.json",
+  "title": "Tannang FirstStage Evidence Package Metadata v1.3",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "manifest_version", "product_version", "runtime_artifact", "collection_id", "started_at", "finished_at", "target_fingerprint", "run_state", "receipt_references", "artifact_references", "directory_layout"],
+  "properties": {
+    "schema_version": {"const": "1.3"},
+    "manifest_version": {"const": "1.0"},
+    "product_version": {"type": "string", "minLength": 1},
+    "runtime_artifact": {"const": "tannang-first-stage-multi-v1.3"},
+    "collection_id": {"type": "string", "pattern": "^COL-[0-9a-f-]{36}$"},
+    "case_id": {"type": "string", "minLength": 1, "maxLength": 128},
+    "started_at": {"type": "string", "format": "date-time"},
+    "finished_at": {"type": "string", "format": "date-time"},
+    "target_fingerprint": {"$ref": "target-fingerprint-v0.schema.json"},
+    "run_state": {"enum": ["COMPLETE", "PARTIAL"]},
+    "orchestration_reason": {"const": "CANCELLED"},
+    "receipt_references": {
+      "type": "array", "minItems": 4, "maxItems": 4, "uniqueItems": true,
+      "items": {"enum": ["receipts/PROCESS_IDENTITY_SNAPSHOT.json", "receipts/WINDOWS_EVENT_LOG_SYSTEM_CHANNEL.json", "receipts/WINDOWS_HOST_OS_IDENTITY_SNAPSHOT.json", "receipts/WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT.json"]}
+    },
+    "artifact_references": {"type": "array", "maxItems": 4, "uniqueItems": true, "items": {"$ref": "#/$defs/artifact"}},
+    "directory_layout": {"type": "array", "minItems": 8, "uniqueItems": true, "items": {"enum": ["meta", "raw", "derived", "normalized", "receipts", "hashes", "handoff", "reports"]}}
+  },
+  "$defs": {
+    "artifact": {
+      "type": "object", "additionalProperties": false,
+      "required": ["path", "media_type", "content_schema_id", "raw_or_derived", "size", "sha256"],
+      "properties": {
+        "path": {"enum": ["derived/process-identity-snapshot.ndjson", "raw/windows-event-log-system.evtx", "derived/windows-host-os-identity.json", "derived/windows-transport-endpoints.ndjson"]},
+        "media_type": {"type": "string", "minLength": 1},
+        "content_schema_id": {"type": "string", "minLength": 1},
+        "raw_or_derived": {"enum": ["RAW", "DERIVED"]},
+        "size": {"type": "integer", "minimum": 0},
+        "sha256": {"type": "string", "pattern": "^[0-9a-f]{64}$"}
+      },
+      "allOf": [
+        {"if": {"properties": {"path": {"const": "derived/process-identity-snapshot.ndjson"}}, "required": ["path"]}, "then": {"properties": {"media_type": {"const": "application/x-ndjson"}, "content_schema_id": {"const": "https://github.com/05wuyanzi/tannang/contracts/process-identity-snapshot-record-v0.schema.json"}, "raw_or_derived": {"const": "DERIVED"}}}},
+        {"if": {"properties": {"path": {"const": "raw/windows-event-log-system.evtx"}}, "required": ["path"]}, "then": {"properties": {"media_type": {"const": "application/x-evtx"}, "content_schema_id": {"const": "urn:tannang:artifact:windows-event-log-system-evtx-v0"}, "raw_or_derived": {"const": "RAW"}}}},
+        {"if": {"properties": {"path": {"const": "derived/windows-host-os-identity.json"}}, "required": ["path"]}, "then": {"properties": {"media_type": {"const": "application/json"}, "content_schema_id": {"const": "urn:tannang:artifact:windows-host-os-identity-json-v0"}, "raw_or_derived": {"const": "DERIVED"}}}},
+        {"if": {"properties": {"path": {"const": "derived/windows-transport-endpoints.ndjson"}}, "required": ["path"]}, "then": {"properties": {"media_type": {"const": "application/x-ndjson"}, "content_schema_id": {"const": "urn:tannang:artifact:windows-transport-endpoint-record-v0"}, "raw_or_derived": {"const": "DERIVED"}}}}
+      ]
+    }
+  }
+}

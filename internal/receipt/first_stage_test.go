@@ -299,6 +299,137 @@ func TestFirstStageV12HostIdentityProtectionAndOwnership(t *testing.T) {
 	}
 }
 
+func TestFirstStageV13TransportReceiptStrictIdentity(t *testing.T) {
+	record := validFirstStageReceipt()
+	definition := capability.WindowsTransportEndpointSnapshot()
+	reason := execution.ReasonNone
+	record.SchemaVersion = FirstStageV13SchemaVersion
+	record.RuntimeArtifact = FirstStageV13RuntimeArtifact
+	record.RequestedCapability = capability.CapabilityRequest{ID: capability.WindowsTransportEndpointSnapshotID, Priority: capability.PriorityLate, Protected: false}
+	record.Capability = &definition
+	record.SelectedProvider = &ProviderIdentity{ID: WindowsTransportEndpointProviderID, Class: provider.FirstPartyNative}
+	record.CompatibilityReason = &reason
+	record.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: WindowsTransportEndpointProviderID, Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true}}
+	record.ArtifactReference = &ArtifactReference{Path: WindowsTransportEndpointArtifactPath, MediaType: WindowsTransportEndpointArtifactMedia, ContentSchemaID: WindowsTransportEndpointArtifactSchema, RawOrDerived: "DERIVED", Size: 0, SHA256: strings.Repeat("d", 64)}
+	if err := record.Validate(); err != nil {
+		t.Fatalf("valid v1.3 transport receipt rejected: %v", err)
+	}
+	protectedNetwork := record
+	protectedNetwork.RequestedCapability.Protected = true
+	if err := protectedNetwork.Validate(); err != nil {
+		t.Fatalf("new production protected network receipt rejected: %v", err)
+	}
+	nonProtectedProcess := record
+	nonProtectedProcess.RequestedCapability = capability.CapabilityRequest{ID: capability.ProcessIdentitySnapshotID, Priority: capability.PriorityNormal, Protected: false}
+	processDefinition := capability.ProcessIdentitySnapshot()
+	nonProtectedProcess.Capability = &processDefinition
+	nonProtectedProcess.SelectedProvider = &ProviderIdentity{ID: FirstStageProviderID, Class: provider.FirstPartyNative}
+	nonProtectedProcess.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: FirstStageProviderID, Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true}}
+	if err := nonProtectedProcess.Validate(); err == nil {
+		t.Fatal("non-protected process receipt unexpectedly validated")
+	}
+	wrongProvider := record
+	wrongProvider.SelectedProvider = &ProviderIdentity{ID: FirstStageProviderID, Class: provider.FirstPartyNative}
+	if err := wrongProvider.Validate(); err == nil {
+		t.Fatal("cross-capability network provider unexpectedly validated")
+	}
+	wrongEvaluation := record
+	wrongEvaluation.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: FirstStageProviderID, Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true}}
+	if err := wrongEvaluation.Validate(); err == nil {
+		t.Fatal("cross-capability network evaluation unexpectedly validated")
+	}
+	metadata := FirstStagePackageMetadata{
+		SchemaVersion: FirstStageV13SchemaVersion, ManifestVersion: ManifestVersion, ProductVersion: ProductVersion, RuntimeArtifact: FirstStageV13RuntimeArtifact,
+		CollectionID: record.CollectionID, StartedAt: record.AcquisitionStartedAt, FinishedAt: record.AcquisitionFinishedAt, TargetFingerprint: record.TargetFingerprint, RunState: "COMPLETE",
+		ReceiptReferences:  []string{FirstStageReceiptPath(capability.ProcessIdentitySnapshotID), FirstStageReceiptPath(capability.WindowsEventLogSystemChannelID), FirstStageReceiptPath(capability.WindowsHostOSIdentitySnapshotID), FirstStageReceiptPath(capability.WindowsTransportEndpointSnapshotID)},
+		ArtifactReferences: []ArtifactReference{*record.ArtifactReference}, DirectoryLayout: []string{"meta", "raw", "derived", "normalized", "receipts", "hashes", "handoff", "reports"},
+	}
+	if err := metadata.Validate(); err != nil {
+		t.Fatalf("valid v1.3 metadata rejected: %v", err)
+	}
+}
+
+func TestFirstStageV13UnavailableTransportReceiptHasNoArtifact(t *testing.T) {
+	record := validFirstStageReceipt()
+	definition := capability.WindowsTransportEndpointSnapshot()
+	reason := execution.ReasonAPIUnavailable
+	record.SchemaVersion = FirstStageV13SchemaVersion
+	record.RuntimeArtifact = FirstStageV13RuntimeArtifact
+	record.RequestedCapability = capability.CapabilityRequest{ID: capability.WindowsTransportEndpointSnapshotID, Priority: capability.PriorityLate, Protected: false}
+	record.Capability = &definition
+	record.SelectedProvider = nil
+	record.Compatibility = execution.Unavailable
+	record.CompatibilityReason = &reason
+	record.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: WindowsTransportEndpointProviderID, Compatibility: execution.Unavailable, Reason: reason, Eligible: false}}
+	record.Attempted = false
+	record.Execution = execution.Result{State: execution.Skipped, Reason: reason, SideEffectSummary: "No provider was executed."}
+	record.MissingEvidence = []string{"No suitable provider was available for the requested capability."}
+	record.ArtifactReference = nil
+	if err := record.Validate(); err != nil {
+		t.Fatalf("valid unavailable transport receipt rejected: %v", err)
+	}
+}
+
+func TestFirstStageV13RejectsCrossCapabilityCandidateEvaluations(t *testing.T) {
+	cases := []struct {
+		id       string
+		provider string
+		foreign  string
+	}{
+		{capability.ProcessIdentitySnapshotID, FirstStageProviderID, "windows-iphlpapi-transport-endpoints"},
+		{capability.WindowsEventLogSystemChannelID, "windows-wevtapi-system-channel", FirstStageProviderID},
+		{capability.WindowsHostOSIdentitySnapshotID, "windows-native-host-os-identity", "windows-wevtapi-system-channel"},
+		{capability.WindowsTransportEndpointSnapshotID, WindowsTransportEndpointProviderID, "windows-native-host-os-identity"},
+	}
+	for _, testCase := range cases {
+		t.Run(testCase.id, func(t *testing.T) {
+			record := validV13ReceiptForCapability(testCase.id, testCase.provider)
+			record.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: testCase.foreign, Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true}}
+			if err := record.Validate(); err == nil {
+				t.Fatalf("foreign candidate evaluation unexpectedly validated for %s", testCase.id)
+			}
+			record = validV13ReceiptForCapability(testCase.id, testCase.provider)
+			record.CandidateEvaluations = append(record.CandidateEvaluations, resolver.CandidateEvaluation{ProviderID: testCase.foreign, Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true})
+			if err := record.Validate(); err == nil {
+				t.Fatalf("mixed candidate evaluations unexpectedly validated for %s", testCase.id)
+			}
+		})
+	}
+}
+
+func validV13ReceiptForCapability(id, providerID string) FirstStageRecord {
+	record := validFirstStageReceipt()
+	definition := capability.ProcessIdentitySnapshot()
+	protected := true
+	var artifact ArtifactReference
+	switch id {
+	case capability.ProcessIdentitySnapshotID:
+		definition = capability.ProcessIdentitySnapshot()
+		artifact = ArtifactReference{Path: FirstStageArtifactPath, MediaType: FirstStageArtifactMedia, ContentSchemaID: FirstStageArtifactSchema, RawOrDerived: "DERIVED", Size: 32, SHA256: strings.Repeat("a", 64)}
+	case capability.WindowsEventLogSystemChannelID:
+		definition = capability.WindowsEventLogSystemChannel()
+		artifact = ArtifactReference{Path: WindowsEventLogSystemArtifactPath, MediaType: WindowsEventLogSystemArtifactMedia, ContentSchemaID: WindowsEventLogSystemArtifactSchema, RawOrDerived: "RAW", Size: 32, SHA256: strings.Repeat("b", 64)}
+	case capability.WindowsHostOSIdentitySnapshotID:
+		definition = capability.WindowsHostOSIdentitySnapshot()
+		artifact = ArtifactReference{Path: WindowsHostOSIdentityArtifactPath, MediaType: WindowsHostOSIdentityArtifactMedia, ContentSchemaID: WindowsHostOSIdentityArtifactSchema, RawOrDerived: "DERIVED", Size: 32, SHA256: strings.Repeat("c", 64)}
+	case capability.WindowsTransportEndpointSnapshotID:
+		definition = capability.WindowsTransportEndpointSnapshot()
+		protected = false
+		artifact = ArtifactReference{Path: WindowsTransportEndpointArtifactPath, MediaType: WindowsTransportEndpointArtifactMedia, ContentSchemaID: WindowsTransportEndpointArtifactSchema, RawOrDerived: "DERIVED", Size: 0, SHA256: strings.Repeat("d", 64)}
+	}
+	reason := execution.ReasonNone
+	record.SchemaVersion = FirstStageV13SchemaVersion
+	record.RuntimeArtifact = FirstStageV13RuntimeArtifact
+	record.RequestedCapability = capability.CapabilityRequest{ID: id, Priority: capability.PriorityLate, Protected: protected}
+	record.Capability = &definition
+	record.SelectedProvider = &ProviderIdentity{ID: providerID, Class: provider.FirstPartyNative}
+	record.Compatibility = execution.Available
+	record.CompatibilityReason = &reason
+	record.CandidateEvaluations = []resolver.CandidateEvaluation{{ProviderID: providerID, Compatibility: execution.Available, Reason: execution.ReasonNone, Eligible: true}}
+	record.ArtifactReference = &artifact
+	return record
+}
+
 func validFirstStagePackageMetadata(record FirstStageRecord) FirstStagePackageMetadata {
 	return FirstStagePackageMetadata{
 		SchemaVersion: SchemaVersion, ManifestVersion: ManifestVersion, ProductVersion: ProductVersion, RuntimeArtifact: FirstStageRuntimeArtifact,

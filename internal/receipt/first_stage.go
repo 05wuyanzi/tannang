@@ -19,23 +19,29 @@ import (
 )
 
 const (
-	FirstStageRuntimeArtifact           = "tannang-first-stage"
-	FirstStageMultiRuntimeArtifact      = "tannang-first-stage-multi"
-	FirstStageV12RuntimeArtifact        = "tannang-first-stage-multi-v1.2"
-	FirstStageProviderID                = "windows-toolhelp-process-snapshot"
-	FirstStageArtifactPath              = "derived/process-identity-snapshot.ndjson"
-	FirstStageArtifactMedia             = "application/x-ndjson"
-	FirstStageArtifactSchema            = "https://github.com/05wuyanzi/tannang/contracts/process-identity-snapshot-record-v0.schema.json"
-	WindowsEventLogSystemArtifactPath   = "raw/windows-event-log-system.evtx"
-	WindowsEventLogSystemArtifactMedia  = "application/x-evtx"
-	WindowsEventLogSystemArtifactSchema = "urn:tannang:artifact:windows-event-log-system-evtx-v0"
-	WindowsEventLogSystemMediaType      = WindowsEventLogSystemArtifactMedia
-	WindowsEventLogSystemSchemaID       = WindowsEventLogSystemArtifactSchema
-	FirstStageMultiSchemaVersion        = "1.1"
-	FirstStageV12SchemaVersion          = "1.2"
-	WindowsHostOSIdentityArtifactPath   = "derived/windows-host-os-identity.json"
-	WindowsHostOSIdentityArtifactMedia  = "application/json"
-	WindowsHostOSIdentityArtifactSchema = "urn:tannang:artifact:windows-host-os-identity-json-v0"
+	FirstStageRuntimeArtifact              = "tannang-first-stage"
+	FirstStageMultiRuntimeArtifact         = "tannang-first-stage-multi"
+	FirstStageV12RuntimeArtifact           = "tannang-first-stage-multi-v1.2"
+	FirstStageV13RuntimeArtifact           = "tannang-first-stage-multi-v1.3"
+	FirstStageProviderID                   = "windows-toolhelp-process-snapshot"
+	FirstStageArtifactPath                 = "derived/process-identity-snapshot.ndjson"
+	FirstStageArtifactMedia                = "application/x-ndjson"
+	FirstStageArtifactSchema               = "https://github.com/05wuyanzi/tannang/contracts/process-identity-snapshot-record-v0.schema.json"
+	WindowsEventLogSystemArtifactPath      = "raw/windows-event-log-system.evtx"
+	WindowsEventLogSystemArtifactMedia     = "application/x-evtx"
+	WindowsEventLogSystemArtifactSchema    = "urn:tannang:artifact:windows-event-log-system-evtx-v0"
+	WindowsEventLogSystemMediaType         = WindowsEventLogSystemArtifactMedia
+	WindowsEventLogSystemSchemaID          = WindowsEventLogSystemArtifactSchema
+	FirstStageMultiSchemaVersion           = "1.1"
+	FirstStageV12SchemaVersion             = "1.2"
+	FirstStageV13SchemaVersion             = "1.3"
+	WindowsHostOSIdentityArtifactPath      = "derived/windows-host-os-identity.json"
+	WindowsHostOSIdentityArtifactMedia     = "application/json"
+	WindowsHostOSIdentityArtifactSchema    = "urn:tannang:artifact:windows-host-os-identity-json-v0"
+	WindowsTransportEndpointArtifactPath   = "derived/windows-transport-endpoints.ndjson"
+	WindowsTransportEndpointArtifactMedia  = "application/x-ndjson"
+	WindowsTransportEndpointArtifactSchema = "urn:tannang:artifact:windows-transport-endpoint-record-v0"
+	WindowsTransportEndpointProviderID     = "windows-iphlpapi-transport-endpoints"
 )
 
 // ArtifactReference is the package-layer identity of one known real artifact.
@@ -81,6 +87,11 @@ func (r ArtifactReference) ValidateForCapability(capabilityID string) error {
 			return errors.New("Windows host identity artifact identity is invalid")
 		}
 		return validateArtifactDigest(r)
+	case capability.WindowsTransportEndpointSnapshotID:
+		if r.Path != WindowsTransportEndpointArtifactPath || r.MediaType != WindowsTransportEndpointArtifactMedia || r.ContentSchemaID != WindowsTransportEndpointArtifactSchema || r.RawOrDerived != "DERIVED" {
+			return errors.New("Windows transport endpoint artifact identity is invalid")
+		}
+		return validateArtifactDigest(r)
 	default:
 		return errors.New("unsupported first-stage artifact capability")
 	}
@@ -122,6 +133,9 @@ type FirstStageRecord struct {
 }
 
 func (r FirstStageRecord) Validate() error {
+	if r.SchemaVersion == FirstStageV13SchemaVersion {
+		return r.validateV13()
+	}
 	if r.SchemaVersion == FirstStageV12SchemaVersion {
 		return r.validateV12()
 	}
@@ -240,6 +254,154 @@ func (r FirstStageRecord) Validate() error {
 		return fmt.Errorf("invalid first-stage acquisition finish: %w", err)
 	}
 	return nil
+}
+
+// validateV13 is the strict authority for runs whose accepted request set
+// includes the supplemental transport-endpoint capability. It is deliberately
+// separate from v1.2 so historical packages retain their original contract.
+func (r FirstStageRecord) validateV13() error {
+	if r.ManifestVersion != ManifestVersion || r.ProductVersion == "" || r.RuntimeArtifact != FirstStageV13RuntimeArtifact {
+		return errors.New("unsupported v1.3 receipt identity")
+	}
+	if strings.TrimSpace(r.CollectionID) == "" {
+		return errors.New("v1.3 collection id is required")
+	}
+	if err := r.TargetFingerprint.Validate(); err != nil {
+		return fmt.Errorf("validate v1.3 fingerprint: %w", err)
+	}
+	if err := r.RequestedCapability.Validate(); err != nil {
+		return fmt.Errorf("validate v1.3 request: %w", err)
+	}
+	if !validV13Capability(r.RequestedCapability.ID) {
+		return errors.New("v1.3 receipt contains an unknown capability")
+	}
+	if r.RequestedCapability.ID != capability.WindowsTransportEndpointSnapshotID && !r.RequestedCapability.Protected {
+		return errors.New("v1.3 request protection does not match the fixed activation contract")
+	}
+	if r.Capability == nil || r.Capability.ID != r.RequestedCapability.ID {
+		return errors.New("v1.3 capability does not match request")
+	}
+	if err := r.Capability.Validate(); err != nil {
+		return fmt.Errorf("validate v1.3 capability: %w", err)
+	}
+	var expectedCapability capability.Capability
+	switch r.RequestedCapability.ID {
+	case capability.ProcessIdentitySnapshotID:
+		expectedCapability = capability.ProcessIdentitySnapshot()
+	case capability.WindowsEventLogSystemChannelID:
+		expectedCapability = capability.WindowsEventLogSystemChannel()
+	case capability.WindowsHostOSIdentitySnapshotID:
+		expectedCapability = capability.WindowsHostOSIdentitySnapshot()
+	case capability.WindowsTransportEndpointSnapshotID:
+		expectedCapability = capability.WindowsTransportEndpointSnapshot()
+	}
+	if *r.Capability != expectedCapability {
+		return errors.New("v1.3 capability definition is invalid")
+	}
+	if !r.Compatibility.Valid() {
+		return errors.New("v1.3 compatibility is invalid")
+	}
+	expectedProvider := providerIDForV13(r.RequestedCapability.ID)
+	if r.SelectedProvider != nil {
+		if r.SelectedProvider.Class != provider.FirstPartyNative || r.SelectedProvider.ID != expectedProvider {
+			return errors.New("v1.3 selected provider is invalid")
+		}
+	} else if r.Compatibility != execution.Unavailable {
+		return errors.New("missing selected provider requires unavailable compatibility")
+	}
+	if r.CompatibilityReason != nil && !r.CompatibilityReason.Valid() {
+		return errors.New("v1.3 compatibility reason is invalid")
+	}
+	for _, evaluation := range r.CandidateEvaluations {
+		if !validV13ProviderID(evaluation.ProviderID) || !evaluation.Compatibility.Valid() || !evaluation.Reason.Valid() {
+			return errors.New("v1.3 candidate evaluation is invalid")
+		}
+		if evaluation.ProviderID != expectedProvider {
+			return errors.New("v1.3 candidate evaluation is not capability-specific")
+		}
+	}
+	if r.SelectedProvider != nil {
+		matched := false
+		for _, evaluation := range r.CandidateEvaluations {
+			if evaluation.ProviderID == r.SelectedProvider.ID {
+				if !evaluation.Eligible || r.CompatibilityReason == nil || evaluation.Compatibility != r.Compatibility || evaluation.Reason != *r.CompatibilityReason {
+					return errors.New("v1.3 selected provider evaluation is inconsistent")
+				}
+				matched = true
+			}
+		}
+		if !matched {
+			return errors.New("v1.3 selected provider is missing its candidate evaluation")
+		}
+	}
+	if err := r.Execution.Validate(); err != nil {
+		return fmt.Errorf("validate v1.3 execution: %w", err)
+	}
+	if len(r.Execution.Payload) != 0 {
+		return errors.New("v1.3 receipt payload must be empty")
+	}
+	if !r.Attempted && r.Execution.State != execution.Skipped {
+		return errors.New("non-attempted v1.3 receipt must be SKIPPED")
+	}
+	if r.Attempted {
+		if r.SelectedProvider == nil || r.CompatibilityReason == nil || len(r.CandidateEvaluations) == 0 {
+			return errors.New("attempted v1.3 receipt requires provider, decision reason, and evaluations")
+		}
+		if r.RequestedCapability.ID == capability.WindowsTransportEndpointSnapshotID && len(r.CandidateEvaluations) != 1 {
+			return errors.New("attempted v1.3 transport receipt requires exactly one evaluation")
+		}
+	}
+	if r.OrchestrationReason != "" && (r.Attempted || r.Execution.Reason != execution.ReasonNone) {
+		return errors.New("v1.3 orchestration reason accounting is invalid")
+	}
+	switch r.OrchestrationReason {
+	case "", "UNKNOWN_CAPABILITY", "RESOLUTION_FAILED", "CANCELLED", "PACKAGE_FINALIZATION_FAILED":
+	default:
+		return errors.New("v1.3 orchestration reason is invalid")
+	}
+	if r.ArtifactReference != nil {
+		if !r.Attempted || (r.Execution.State != execution.Collected && r.Execution.State != execution.Partial) {
+			return errors.New("v1.3 artifact requires retainable execution")
+		}
+		if r.RequestedCapability.ID == capability.WindowsTransportEndpointSnapshotID && r.Execution.State == execution.Partial {
+			return errors.New("v1.3 transport endpoint execution cannot be PARTIAL")
+		}
+		if err := r.ArtifactReference.ValidateForCapability(r.RequestedCapability.ID); err != nil {
+			return err
+		}
+	} else if r.Execution.State == execution.Collected || r.Execution.State == execution.Partial {
+		return errors.New("v1.3 retainable execution requires an artifact")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, r.AcquisitionStartedAt); err != nil {
+		return fmt.Errorf("invalid v1.3 acquisition start: %w", err)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, r.AcquisitionFinishedAt); err != nil {
+		return fmt.Errorf("invalid v1.3 acquisition finish: %w", err)
+	}
+	return nil
+}
+
+func validV13Capability(id string) bool {
+	return id == capability.ProcessIdentitySnapshotID || id == capability.WindowsEventLogSystemChannelID || id == capability.WindowsHostOSIdentitySnapshotID || id == capability.WindowsTransportEndpointSnapshotID
+}
+
+func providerIDForV13(id string) string {
+	switch id {
+	case capability.ProcessIdentitySnapshotID:
+		return FirstStageProviderID
+	case capability.WindowsEventLogSystemChannelID:
+		return "windows-wevtapi-system-channel"
+	case capability.WindowsHostOSIdentitySnapshotID:
+		return "windows-native-host-os-identity"
+	case capability.WindowsTransportEndpointSnapshotID:
+		return WindowsTransportEndpointProviderID
+	default:
+		return ""
+	}
+}
+
+func validV13ProviderID(id string) bool {
+	return id == FirstStageProviderID || id == "windows-wevtapi-system-channel" || id == "windows-native-host-os-identity" || id == WindowsTransportEndpointProviderID
 }
 
 func (r FirstStageRecord) validateV12() error {
@@ -490,6 +652,9 @@ type FirstStagePackageMetadata struct {
 }
 
 func (m FirstStagePackageMetadata) Validate() error {
+	if m.SchemaVersion == FirstStageV13SchemaVersion {
+		return m.validateV13()
+	}
 	if m.SchemaVersion == FirstStageV12SchemaVersion {
 		return m.validateV12()
 	}
@@ -537,6 +702,65 @@ func (m FirstStagePackageMetadata) Validate() error {
 	}
 	if len(m.DirectoryLayout) == 0 {
 		return errors.New("first-stage package directory layout is required")
+	}
+	return nil
+}
+
+func (m FirstStagePackageMetadata) validateV13() error {
+	if m.ManifestVersion != ManifestVersion || m.ProductVersion == "" || m.RuntimeArtifact != FirstStageV13RuntimeArtifact {
+		return errors.New("unsupported v1.3 package identity")
+	}
+	if strings.TrimSpace(m.CollectionID) == "" || (m.RunState != "COMPLETE" && m.RunState != "PARTIAL") {
+		return errors.New("v1.3 package identity is incomplete")
+	}
+	if _, err := time.Parse(time.RFC3339Nano, m.StartedAt); err != nil {
+		return fmt.Errorf("invalid v1.3 package start: %w", err)
+	}
+	if _, err := time.Parse(time.RFC3339Nano, m.FinishedAt); err != nil {
+		return fmt.Errorf("invalid v1.3 package finish: %w", err)
+	}
+	if err := m.TargetFingerprint.Validate(); err != nil {
+		return fmt.Errorf("validate v1.3 package fingerprint: %w", err)
+	}
+	if len(m.ReceiptReferences) != 4 {
+		return errors.New("v1.3 package requires exactly four receipt references")
+	}
+	seenIDs := make(map[string]struct{}, 4)
+	for _, ref := range m.ReceiptReferences {
+		if strings.TrimSpace(ref) == "" || strings.Contains(ref, "..") || strings.HasPrefix(ref, "/") {
+			return errors.New("unsafe v1.3 receipt reference")
+		}
+		id := strings.TrimSuffix(strings.TrimPrefix(ref, "receipts/"), ".json")
+		if ref != FirstStageReceiptPath(id) || !validV13Capability(id) {
+			return errors.New("unknown v1.3 receipt reference")
+		}
+		if _, ok := seenIDs[id]; ok {
+			return errors.New("duplicate v1.3 receipt reference")
+		}
+		seenIDs[id] = struct{}{}
+	}
+	if len(seenIDs) != 4 {
+		return errors.New("v1.3 package must reference all four fixed capabilities")
+	}
+	if m.ArtifactReferences == nil || len(m.ArtifactReferences) > 4 {
+		return errors.New("v1.3 package artifact references must contain zero to four entries")
+	}
+	seenPaths := make(map[string]struct{}, len(m.ArtifactReferences))
+	for _, ref := range m.ArtifactReferences {
+		id := capabilityForArtifactPath(ref.Path)
+		if !validV13Capability(id) {
+			return errors.New("unknown v1.3 artifact path")
+		}
+		if err := ref.ValidateForCapability(id); err != nil {
+			return err
+		}
+		if _, ok := seenPaths[ref.Path]; ok {
+			return errors.New("duplicate v1.3 artifact reference")
+		}
+		seenPaths[ref.Path] = struct{}{}
+	}
+	if len(m.DirectoryLayout) == 0 {
+		return errors.New("v1.3 package directory layout is required")
 	}
 	return nil
 }
@@ -656,6 +880,12 @@ func capabilityForArtifactPath(path string) string {
 	}
 	if path == WindowsHostOSIdentityArtifactPath {
 		return capability.WindowsHostOSIdentitySnapshotID
+	}
+	if path == WindowsTransportEndpointArtifactPath {
+		return capability.WindowsTransportEndpointSnapshotID
+	}
+	if path != FirstStageArtifactPath {
+		return ""
 	}
 	return capability.ProcessIdentitySnapshotID
 }

@@ -28,6 +28,7 @@ const processIdentitySnapshotProviderID = "windows-toolhelp-process-snapshot"
 type processIdentitySnapshotFirstStageDeps struct {
 	StreamingRunner    provider.StreamingRunner
 	HostIdentityRunner provider.StreamingRunner
+	TransportRunner    provider.StreamingRunner
 	EventLogRunner     provider.FileArtifactRunner
 	FingerprintProbe   func(context.Context, string) (fingerprint.TargetFingerprint, error)
 	PackageFactory     firstStagePackageFactory
@@ -72,6 +73,7 @@ func NewProcessIdentitySnapshotAndEventLogFirstStageWithRuntimeSink(finalization
 	return newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout, processIdentitySnapshotFirstStageDeps{
 		StreamingRunner:    provider.NewProcessIdentitySnapshotRunner(),
 		HostIdentityRunner: provider.NewWindowsHostOSIdentityRunner(),
+		TransportRunner:    provider.NewWindowsTransportEndpointRunner(),
 		EventLogRunner:     provider.NewWindowsEventLogSystemRunner(),
 		FingerprintProbe: func(ctx context.Context, output string) (fingerprint.TargetFingerprint, error) {
 			return fingerprint.Probe(ctx, output, fingerprint.Options{IncludeCPUPressure: false})
@@ -191,6 +193,37 @@ func newProcessIdentitySnapshotFirstStageWithDeps(finalizationTimeout time.Durat
 			return nil, fmt.Errorf("validate protected Host/OS Identity baseline request: %w", err)
 		}
 		stage.baseline = append(stage.baseline, hostRequest)
+	}
+	if deps.TransportRunner != nil {
+		transportDescriptor := cloneDescriptor(deps.TransportRunner.Descriptor())
+		if err := transportDescriptor.Validate(); err != nil {
+			return nil, fmt.Errorf("validate transport endpoint provider descriptor: %w", err)
+		}
+		if transportDescriptor.ID != provider.WindowsTransportEndpointProviderID || transportDescriptor.Class != provider.FirstPartyNative || !transportDescriptor.Supports(capability.WindowsTransportEndpointSnapshotID) {
+			return nil, errors.New("real transport endpoint provider binding is not the fixed transport endpoint Provider")
+		}
+		transportArtifact := deps.TransportRunner.Artifact()
+		if err := transportArtifact.Validate(); err != nil {
+			return nil, fmt.Errorf("validate transport endpoint artifact descriptor: %w", err)
+		}
+		if transportArtifact.MediaType != provider.WindowsTransportEndpointMediaType || transportArtifact.ContentSchemaID != provider.WindowsTransportEndpointSchemaID {
+			return nil, errors.New("real transport endpoint artifact binding is not the fixed transport endpoint contract")
+		}
+		definition := capability.WindowsTransportEndpointSnapshot()
+		stage.catalog[definition.ID] = definition
+		stage.providerDescriptors[transportDescriptor.ID] = cloneDescriptor(transportDescriptor)
+		stage.descriptors = append(stage.descriptors, cloneDescriptor(transportDescriptor))
+		stage.streamingRunners[definition.ID] = deps.TransportRunner
+		probe, ok := deps.TransportRunner.(provider.AvailabilityProber)
+		if !ok {
+			return nil, errors.New("real transport endpoint Provider must implement AvailabilityProber")
+		}
+		stage.availabilityProbers[definition.ID] = probe
+		transportRequest := capability.CapabilityRequest{ID: definition.ID, Priority: capability.PriorityLate, Protected: true}
+		if err := transportRequest.Validate(); err != nil {
+			return nil, fmt.Errorf("validate protected transport endpoint baseline request: %w", err)
+		}
+		stage.baseline = append(stage.baseline, transportRequest)
 	}
 	return stage, nil
 }

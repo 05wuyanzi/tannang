@@ -155,3 +155,46 @@ Portable artifact SHA-256 values for the accepted candidate binaries:
 | CLI | `346e8fe3e762cdb727c079441a7478a6208f8f19ae897f7604d4446da92b6cb6` |
 | GUI | `05c8f71925aaa86da31115c4a15d1b13c4feddb5381ebff9f90e90c45a533226` |
 | GUI sibling CLI | `346e8fe3e762cdb727c079441a7478a6208f8f19ae897f7604d4446da92b6cb6` |
+
+## Four-capability protected-baseline post-promotion acceptance
+
+| Field | Value |
+| --- | --- |
+| Task | `TANNANG-R102-WINDOWS-FOUR-CAPABILITY-PROTECTED-BASELINE-POST-PROMOTION-HEADLESS-AND-GUI-ACCEPTANCE` |
+| Source revision | `c6e4c3ced7687383a4de8a29848fd3d4f48ae959` |
+| Source tree | `7742624f95d48c350ee7a8fb76180ba70f311bb4` |
+| Windows version / build | `10.0 / 26200` |
+| OS / process architecture | `amd64` |
+| Observed privilege | `NOT_ELEVATED` |
+| Artifact class | `PORTABLE_GUI_WINDOWS_AMD64` |
+| Build mode | `RC` |
+| Protected baseline | `PROCESS_IDENTITY_SNAPSHOT; WINDOWS_EVENT_LOG_SYSTEM_CHANNEL; WINDOWS_HOST_OS_IDENTITY_SNAPSHOT; WINDOWS_TRANSPORT_ENDPOINT_SNAPSHOT` |
+| Baseline order | `PROCESS; EVENTLOG; HOST; TRANSPORT` |
+| Package / manifest | `FirstStage 1.3 / 1.0` |
+| Runtime artifact | `tannang-first-stage-multi-v1.3` |
+| Headless path | `COMPLETE / verify PASS` |
+| Thin GUI path | `FINISHED: COMPLETE / verify PASS` |
+| Result | `TESTED_PASS` |
+
+The bounded R102 evidence covers one default headless run and one human-operated
+thin-GUI run on the exact environment and source identity above. Both paths
+accepted the same four protected capabilities and independently verified the
+Evidence Package without publishing raw endpoint, process, event, host, or
+identity content. This exact-host result does not establish general Windows
+support, all non-elevated contexts, x86 or arm64 real-host support, an RC or
+release publication, or production readiness.
+
+Portable acceptance bundle SHA-256 values:
+
+| File | SHA-256 |
+| --- | --- |
+| CLI bundle | `2b8705626df40367c07027f7b40f851321ed0dccde9cebc46ad7ca981ec1ce17` |
+| GUI bundle | `b4b9a930ea96413cce9daa7ebc039a574d6d98178aba67e440941c8c9e7ce3dc` |
+| `BUILD-INFO` | `72e3df23f6964bfd3d6605d1027afb3d961c43c1b0e6391ef30dd593a69ceee3` |
+| `SHA256SUMS.txt` | `1e574765f87029061b530d17e185a0025ee3e15245483d71195b646ee8a6753c` |
+
+The network Provider in this acceptance is the fixed local
+`windows-iphlpapi-transport-endpoints` implementation. Its aggregate endpoint
+row count is an acceptance-only summary and is not a public substitute for raw
+rows; no collection identifiers, hostnames, usernames, IP addresses, ports,
+PIDs, process names, private paths, or raw Event Log content are published here.
